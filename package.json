@@ -1,0 +1,13 @@
+{
+  "name": "resa",
+  "private": true,
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "db:migrate": "npm run db:migrate -w apps/api",
+    "db:seed": "npm run db:seed -w apps/api",
+    "dev": "npm run dev -w apps/api",
+    "test": "npm test -w apps/api",
+    "typecheck": "npm run typecheck -w apps/api"
+  },
+  "engines": { "node": ">=22" }
+}
