@@ -19,6 +19,10 @@ export interface SheetRow {
 
 type PanelState = { kind: 'block' } | { kind: 'new'; row: SheetRow } | { kind: 'group'; row: SheetRow } | { kind: 'booking'; id: string } | null;
 
+function canFinance(user: User, clubId: string) {
+  return user.roles.some((r) => (r.clubId === clubId && r.role === 'club_admin') || r.role === 'org_admin');
+}
+
 function canManage(user: User, clubId: string) {
   return user.roles.some((r) => (r.clubId === clubId && ['club_admin', 'receptionist'].includes(r.role)) || r.role === 'org_admin');
 }
@@ -159,7 +163,7 @@ export function TeeSheet({ user }: { user: User }) {
           )}
           {panel?.kind === 'booking' && (
             <BookingPanel key={`${panel.id}-${panelVersion}`} id={panel.id} rows={rows} courseId={courseId!} canManage={manage}
-              onChanged={refresh} onClose={() => setPanel(null)} />
+              canFinance={!!clubId && canFinance(user, clubId)} onChanged={refresh} onClose={() => setPanel(null)} />
           )}
         </div>
       </div>
@@ -379,8 +383,8 @@ function GroupPanel({ club, courseId, row, rows, onSaved, onClose }: {
   );
 }
 
-function BookingPanel({ id, rows, courseId, canManage, onChanged, onClose }: {
-  id: string; rows: SheetRow[]; courseId: string; canManage: boolean; onChanged: (id?: string) => void; onClose: () => void;
+function BookingPanel({ id, rows, courseId, canManage, canFinance, onChanged, onClose }: {
+  id: string; rows: SheetRow[]; courseId: string; canManage: boolean; canFinance: boolean; onChanged: (id?: string) => void; onClose: () => void;
 }) {
   const [b, setB] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
@@ -437,7 +441,7 @@ function BookingPanel({ id, rows, courseId, canManage, onChanged, onClose }: {
       {others.length > 0 && <div className="small muted">Partage le départ avec : {others.map((o) => `${o.customerName ?? o.reference} (${o.players} j)`).join(', ')}</div>}
       {b.notes && <div className="small">📝 {b.notes}</div>}
       {b.status === 'confirmed' && <QuoteLines quote={{ ...b.pricing, lines: b.pricing.lines }} />}
-      <PaymentSection key={b.status + b.pricing.totalMinor} bookingId={id} canManage={canManage} onChanged={() => onChanged(id)} />
+      <PaymentSection key={b.status + b.pricing.totalMinor} bookingId={id} canManage={canManage} canFinance={canFinance} onChanged={() => onChanged(id)} />
 
       {canManage && b.status === 'confirmed' && (
         <>

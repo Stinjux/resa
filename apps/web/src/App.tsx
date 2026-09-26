@@ -6,13 +6,14 @@ import { BookingFlow } from './pages/BookingFlow';
 import { Assistant } from './pages/Assistant';
 import { Config } from './pages/Config';
 import { Inbox } from './pages/Inbox';
+import { Cash } from './pages/Cash';
 import { Reports } from './pages/Reports';
 import { Login } from './pages/Login';
 import { MyBookings } from './pages/MyBookings';
 import { StarterBoard } from './pages/StarterBoard';
 import { TeeSheet } from './pages/TeeSheet';
 
-type Page = 'book' | 'sheet' | 'starter' | 'mine' | 'config' | 'assistant' | 'reports' | 'inbox' | 'login';
+type Page = 'book' | 'sheet' | 'starter' | 'mine' | 'config' | 'assistant' | 'reports' | 'inbox' | 'cash' | 'login';
 
 export function hasRole(user: User | null, roles: string[]): boolean {
   return !!user?.roles.some((r) => roles.includes(r.role));
@@ -56,6 +57,7 @@ export function App() {
     ['sheet', t('nav.sheet'), canSheet],
     ['starter', t('nav.starter'), canStarter],
     ['inbox', pending ? `Demandes (${pending})` : 'Demandes', canValidate],
+    ['cash', 'Caisse', hasRole(user, ['org_admin', 'club_admin', 'receptionist'])],
     ['assistant', 'Assistant IA', canSheet],
     ['reports', 'Rapports', hasRole(user, ['org_admin', 'club_admin'])],
     ['config', t('nav.config'), hasRole(user, ['org_admin', 'club_admin'])],
@@ -97,6 +99,7 @@ export function App() {
         {page === 'assistant' && user && <Assistant />}
         {page === 'inbox' && user && <Inbox user={user} onChanged={refreshPending} />}
         {page === 'reports' && user && <Reports user={user} />}
+        {page === 'cash' && user && <Cash user={user} />}
       </main>
     </>
   );

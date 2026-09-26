@@ -24,7 +24,9 @@ export type DomainErrorCode =
   | 'AI_NOT_CONFIGURED'
   | 'AI_UNAVAILABLE'
   | 'DRAFT_EXPIRED'
-  | 'TEE_TIME_BLOCKED';
+  | 'TEE_TIME_BLOCKED'
+  | 'INVOICE_EXISTS'
+  | 'LEGAL_INFO_MISSING';
 
 export class DomainError extends Error {
   constructor(

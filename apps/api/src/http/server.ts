@@ -15,6 +15,7 @@ import { aiRoutes } from './routes/ai.js';
 import { configRoutes } from './routes/config.js';
 import { messagingRoutes } from './routes/messaging.js';
 import { operationsRoutes } from './routes/operations.js';
+import { billingRoutes } from './routes/billing.js';
 import { emailRoutes } from './routes/emails.js';
 import { orderRoutes } from './routes/orders.js';
 import { staffRoutes } from './routes/staff.js';
@@ -79,6 +80,7 @@ export function buildServer(input: Omit<AppDeps, 'posRegistry' | 'ai' | 'messagi
     messagingRoutes(api, deps);
     operationsRoutes(api, deps);
     emailRoutes(api, deps);
+    billingRoutes(api, deps);
   });
 
   if (opts.webRoot && existsSync(opts.webRoot)) {

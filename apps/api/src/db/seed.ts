@@ -41,9 +41,13 @@ async function seedConfig(db: Db): Promise<{ orgId: string; clubs: Array<{ id: s
     for (const g of GOLFS) {
       const club = await tx.query(
         `INSERT INTO clubs (organization_id, code, name, timezone, currency, default_locale, country_code,
-                            prices_include_tax, tax_rate_bp, default_caddie_payment)
-         VALUES ($1, $2, $3, 'Africa/Casablanca', 'MAD', 'fr', 'MA', true, 2000, 'on_site') RETURNING id`,
-        [orgId, g.code, g.name],
+                            prices_include_tax, tax_rate_bp, default_caddie_payment,
+                            legal_name, legal_address, ice, tax_id, trade_register, patente, contact_phone)
+         VALUES ($1, $2, $3, 'Africa/Casablanca', 'MAD', 'fr', 'MA', true, 2000, 'on_site',
+                 $4, $5, $6, 'IF-DEMO', 'RC-DEMO', 'TP-DEMO', '+212 5 00 00 00 00') RETURNING id`,
+        // Mentions légales fictives (démonstration) : à remplacer par les vraies.
+        [orgId, g.code, g.name, `${g.name} SARL (démo)`, `Adresse de démonstration, ${g.name.replace('Golf démo ', '')}, Maroc`,
+          `00000000000000${GOLFS.indexOf(g) + 1}`],
       );
       const clubId: string = club.rows[0].id;
       const course = await tx.query(

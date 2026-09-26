@@ -4,6 +4,7 @@
 import type { Db } from '../../db/pool.js';
 import { withTransaction } from '../../db/pool.js';
 import { audit, type Actor } from '../../shared/audit.js';
+import { toCsv } from '../../shared/csv.js';
 import { DomainError } from '../../shared/errors.js';
 import { parseTimeMaybe } from '../ai/time.js';
 import { getClub, getCourse } from '../catalog/repository.js';
@@ -94,13 +95,6 @@ export async function setStarted(db: Db, teeTimeId: string, started: boolean, ac
 const CHECKIN_LABEL = { expected: 'attendu', arrived: 'arrivé', no_show: 'absent' } as const;
 const PAYMENT_LABEL: Record<string, string> = { nothing_due: 'rien à payer', unpaid: 'à payer', partially_paid: 'partiel', paid: 'payé', refund_due: 'à rembourser' };
 
-function csvCell(v: unknown): string {
-  const s = v === null || v === undefined ? '' : String(v);
-  // Protection contre l'injection de formules dans les tableurs.
-  const safe = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
-  return /[";\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
-}
-
 /** Feuille de départs du jour au format CSV (séparateur « ; », compatible Excel). */
 export async function teeSheetCsv(db: Db, courseId: string, date: string, withContacts: boolean): Promise<string> {
   const sheet = await getTeeSheet(db, courseId, date);
@@ -121,5 +115,5 @@ export async function teeSheetCsv(db: Db, courseId: string, date: string, withCo
         CHECKIN_LABEL[b.checkinStatus], r.blockedReason ?? '']);
     }
   }
-  return '﻿' + lines.map((l) => l.map(csvCell).join(';')).join('\r\n');
+  return toCsv(lines);
 }

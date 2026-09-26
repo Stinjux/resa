@@ -32,6 +32,7 @@ Chaque étape livre un logiciel fonctionnel et testé.
 | 9 | **WhatsApp / SMS** : demandes recueillies par l'IA, validation obligatoire par la réception ou la direction, confirmation au client, simulateur, contrat de connecteur (voir `docs/MESSAGERIE.md`) | ✅ livré (fournisseur à choisir) |
 | 10 | **Accueil** : arrivées / absences (frais d'absence réglables), départs bloqués (tournoi, entretien), feuille imprimable et export Excel | ✅ livré |
 | 11 | **E-mails** : confirmation, modification, annulation, rappel la veille ; fr/en/ar ; récapitulatif unique pour un groupe ; file avec reprises ; SMTP standard (voir `docs/EMAILS.md`) | ✅ livré (serveur SMTP à fournir) |
+| 12 | **Facturation et caisse** : reçus, factures aux mentions légales marocaines (ICE, IF, RC, patente) à numérotation continue, avoirs, clôture de caisse (Z) avec comptage des espèces, export comptable (voir `docs/FACTURATION.md`) | ✅ livré |
 
 ## Suites possibles
 

@@ -82,6 +82,8 @@ const CLUB_SETTINGS: ColumnMap = {
   customerCanCancel: 'customer_can_cancel', onlinePayment: 'online_payment', posProvider: 'pos_provider',
   messagingProvider: 'messaging_provider', noShowFeePercent: 'no_show_fee_percent',
   emailEnabled: 'email_enabled', emailReplyTo: 'email_reply_to', contactPhone: 'contact_phone', reminderHoursBefore: 'reminder_hours_before',
+  legalName: 'legal_name', legalAddress: 'legal_address', ice: 'ice', taxId: 'tax_id', tradeRegister: 'trade_register', patente: 'patente',
+  invoiceFooter: 'invoice_footer',
 };
 
 function auditData(def: EntityDef, values: Record<string, unknown>) {
@@ -208,7 +210,8 @@ export async function getClubConfig(q: Queryable, clubId: string) {
                     customer_can_cancel AS "customerCanCancel", online_payment AS "onlinePayment", pos_provider AS "posProvider",
                     messaging_provider AS "messagingProvider", no_show_fee_percent AS "noShowFeePercent",
                     email_enabled AS "emailEnabled", email_reply_to AS "emailReplyTo", contact_phone AS "contactPhone",
-                    reminder_hours_before AS "reminderHoursBefore"
+                    reminder_hours_before AS "reminderHoursBefore", legal_name AS "legalName", legal_address AS "legalAddress",
+                    ice, tax_id AS "taxId", trade_register AS "tradeRegister", patente, invoice_footer AS "invoiceFooter"
                FROM clubs WHERE id = $1`, [clubId]),
     q.query(`SELECT id, code, name, allowed_holes AS "allowedHoles", default_interval_minutes AS "defaultIntervalMinutes",
                     default_max_players AS "defaultMaxPlayers", play_minutes_9 AS "playMinutes9", play_minutes_18 AS "playMinutes18", active

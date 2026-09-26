@@ -4,16 +4,20 @@ import { money } from '../format';
 import { ErrorBox } from './common';
 import { errorText, useI18n } from '../i18n';
 import { PaymentBadge } from './PaymentSection';
+import { DocOverlay, InvoiceDoc, ReceiptDoc } from './Documents';
 
 function BookingCard({ b, onChanged }: { b: any; onChanged: () => void }) {
   const { t } = useI18n();
   const [order, setOrder] = useState<any>(null);
   const [preview, setPreview] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [invoices, setInvoices] = useState<any[]>([]);
+  const [doc, setDoc] = useState<{ kind: 'invoice' | 'receipt'; data: any } | null>(null);
   const upcoming = b.status === 'confirmed' && new Date(b.teeTime.startsAt) > new Date();
 
   useEffect(() => {
     get(`/api/bookings/${b.id}/order`).then((r) => setOrder(r.order)).catch(() => undefined);
+    get(`/api/bookings/${b.id}/invoices`).then((r) => setInvoices(r.invoices)).catch(() => undefined);
     if (upcoming) get(`/api/bookings/${b.id}/cancellation-preview`).then(setPreview).catch(() => undefined);
   }, [b.id, b.status]);
 
@@ -46,7 +50,23 @@ function BookingCard({ b, onChanged }: { b: any; onChanged: () => void }) {
             <button className="btn sm danger" onClick={cancel}>{t('mine.cancel')}</button>
           </div>
         : <div className="small muted">{t('mine.contactGolf')}</div>)}
+      {(order?.paidMinor > 0 || invoices.length > 0) && (
+        <div className="row small">
+          {order?.paidMinor > 0 && <button className="btn sm" onClick={() => get(`/api/bookings/${b.id}/receipt`)
+            .then((r) => setDoc({ kind: 'receipt', data: r.receipt })).catch((e) => setError(errorText(t, e)))}>{t('mine.receipt')}</button>}
+          {invoices.map((i) => (
+            <button key={i.id} className="btn sm" onClick={() => get(`/api/invoices/${i.id}`)
+              .then((r) => setDoc({ kind: 'invoice', data: r.invoice })).catch((e) => setError(errorText(t, e)))}>
+              {t(i.kind === 'invoice' ? 'mine.invoice' : 'mine.creditNote')} {i.number}</button>
+          ))}
+        </div>
+      )}
       <ErrorBox error={error} />
+      {doc && (
+        <DocOverlay onClose={() => setDoc(null)}>
+          {doc.kind === 'invoice' ? <InvoiceDoc invoice={doc.data} /> : <ReceiptDoc receipt={doc.data} />}
+        </DocOverlay>
+      )}
     </div>
   );
 }

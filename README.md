@@ -85,6 +85,8 @@ Servie par le serveur de l'API une fois compilée (`npm start`) :
 - **Rapports** (direction) : chiffres de la période + analyse rédigée par l'IA
 - **Demandes WhatsApp / SMS** : l'IA échange avec le client, puis **chaque demande est validée par la
   réception ou la direction** avant réservation ; confirmation envoyée au client (voir `docs/MESSAGERIE.md`)
+- **Caisse** (réception, direction) : reçus, factures et avoirs imprimables (PDF), clôture de caisse (Z)
+  avec écart d'espèces, journal et export comptable (voir `docs/FACTURATION.md`)
 - **E-mails aux clients** : confirmation, modification, annulation et rappel, dans la langue du client ;
   consultables dans Configuration → E-mails (voir `docs/EMAILS.md`)
 - Interface client en **français, anglais et arabe** (sélecteur de langue en haut à droite)
@@ -187,6 +189,12 @@ est stockée, mots de passe hachés avec scrypt).
 | POST · PATCH | `/api/clubs/:clubId/config/:entity[/:id]` | direction | `courses`, `schedule-rules`, `tariffs`, `resource-types`, `caddies`, `resource-units` |
 | PUT | `/api/clubs/:clubId/config/resource-types/:id/overrides/:date` | direction | Stock différent un jour donné |
 | GET | `/api/clubs/:clubId/config/grid-preview?courseId=&date=` | direction | Aperçu des départs d'un jour |
+| GET | `/api/bookings/:id/receipt` · `/api/bookings/:id/invoices` | réception, client | Reçu ; factures et avoirs de la réservation |
+| POST | `/api/bookings/:id/invoices` | réception | Émettre la facture (client, adresse, ICE) |
+| POST | `/api/invoices/:id/credit-note` | direction | Avoir annulant une facture |
+| GET | `/api/clubs/:clubId/invoices[.csv]?from=&to=` | direction | Journal des factures / export comptable |
+| GET · POST | `/api/clubs/:clubId/cash` · `/cash/closings` | réception | Caisse en cours ; clôture (Z) |
+| GET | `/api/clubs/:clubId/emails` · `/api/emails/:id` | direction | E-mails envoyés aux clients, aperçu |
 
 Codes d'erreur métier stables : `TEE_TIME_FULL`, `TEE_TIME_PRIVATE`,
 `PRIVATE_REQUIRES_EMPTY_TEE_TIME`, `HOLES_MISMATCH`, `CADDIE_UNAVAILABLE`,

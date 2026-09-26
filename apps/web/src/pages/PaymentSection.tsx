@@ -3,6 +3,7 @@ import { get, post } from '../api';
 import { money } from '../format';
 import { ErrorBox } from './common';
 import { useI18n } from '../i18n';
+import { DocOverlay, InvoiceDoc, ReceiptDoc } from './Documents';
 
 export const PAYMENT_STATUS: Record<string, [string, string]> = {
   nothing_due: ['Rien à payer', 'badge'],
@@ -23,7 +24,9 @@ export function PaymentBadge({ status }: { status: string | null | undefined }) 
 }
 
 /** Solde, paiements et remboursements d'une réservation ; encaisser / rembourser. */
-export function PaymentSection({ bookingId, canManage, onChanged }: { bookingId: string; canManage: boolean; onChanged: () => void }) {
+export function PaymentSection({ bookingId, canManage, canFinance = false, onChanged }: {
+  bookingId: string; canManage: boolean; canFinance?: boolean; onChanged: () => void;
+}) {
   const [order, setOrder] = useState<any>(null);
   const [mode, setMode] = useState<'pay' | 'refund' | null>(null);
   const [amount, setAmount] = useState('');
@@ -113,6 +116,75 @@ export function PaymentSection({ bookingId, canManage, onChanged }: { bookingId:
         </div>
       )}
       {!mode && <ErrorBox error={error} />}
+      <BillingDocs bookingId={bookingId} canManage={canManage} canFinance={canFinance} totalMinor={order.totalMinor} />
+    </div>
+  );
+}
+
+/** Reçu, factures et avoirs d'une réservation. */
+function BillingDocs({ bookingId, canManage, canFinance, totalMinor }: { bookingId: string; canManage: boolean; canFinance: boolean; totalMinor: number }) {
+  const [invoices, setInvoices] = useState<any[]>([]);
+  const [doc, setDoc] = useState<{ kind: 'invoice' | 'receipt'; data: any } | null>(null);
+  const [form, setForm] = useState<{ name: string; address: string; ice: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const load = () => get(`/api/bookings/${bookingId}/invoices`).then((r) => setInvoices(r.invoices)).catch((e) => setError(e.message));
+  useEffect(() => { load(); }, [bookingId]);
+  const active = invoices.find((i) => i.kind === 'invoice' && !i.creditNoteNumber);
+
+  async function run(fn: () => Promise<void>) {
+    setBusy(true);
+    setError(null);
+    try { await fn(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  }
+  const showInvoice = (id: string) => run(async () => setDoc({ kind: 'invoice', data: (await get(`/api/invoices/${id}`)).invoice }));
+  const issue = () => run(async () => {
+    const r = await post(`/api/bookings/${bookingId}/invoices`, { buyer: { name: form!.name || undefined, address: form!.address || null, ice: form!.ice || null } });
+    setForm(null);
+    await load();
+    setDoc({ kind: 'invoice', data: r.invoice });
+  });
+  const credit = (id: string, number: string) => {
+    const reason = window.prompt(`Motif de l'avoir annulant la facture ${number} :`);
+    if (!reason) return;
+    run(async () => { const r = await post(`/api/invoices/${id}/credit-note`, { reason }); await load(); setDoc({ kind: 'invoice', data: r.invoice }); });
+  };
+
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <div className="row">
+        <strong className="small">Documents</strong>
+        <button className="btn sm" disabled={busy} onClick={() => run(async () => setDoc({ kind: 'receipt', data: (await get(`/api/bookings/${bookingId}/receipt`)).receipt }))}>Reçu</button>
+        {canManage && !active && totalMinor > 0 && !form && (
+          <button className="btn sm" onClick={() => setForm({ name: '', address: '', ice: '' })}>Facturer</button>
+        )}
+      </div>
+      {invoices.map((i) => (
+        <div key={i.id} className="row small">
+          <button className="btn sm" onClick={() => showInvoice(i.id)}>{i.kind === 'invoice' ? 'Facture' : 'Avoir'} {i.number}</button>
+          <span>{money(i.totalMinor, i.currency)}</span>
+          {i.creditNoteNumber && <span className="muted">annulée par {i.creditNoteNumber}</span>}
+          {canFinance && i.kind === 'invoice' && !i.creditNoteNumber && <button className="btn sm" disabled={busy} onClick={() => credit(i.id, i.number)}>Avoir</button>}
+        </div>
+      ))}
+      {form && (
+        <div className="card stack" style={{ background: 'var(--surface-2)' }}>
+          <label>Nom ou raison sociale<input value={form.name} placeholder="Par défaut : nom du client" onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
+          <label>Adresse<input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} /></label>
+          <label>ICE du client (entreprise)<input value={form.ice} onChange={(e) => setForm({ ...form, ice: e.target.value })} /></label>
+          <div className="row">
+            <button className="btn primary" disabled={busy} onClick={issue}>Émettre la facture</button>
+            <button className="btn" onClick={() => setForm(null)}>Annuler</button>
+          </div>
+          <p className="small muted" style={{ margin: 0 }}>Une facture émise ne se modifie plus : une erreur se corrige par un avoir (direction).</p>
+        </div>
+      )}
+      <ErrorBox error={error} />
+      {doc && (
+        <DocOverlay onClose={() => setDoc(null)}>
+          {doc.kind === 'invoice' ? <InvoiceDoc invoice={doc.data} /> : <ReceiptDoc receipt={doc.data} />}
+        </DocOverlay>
+      )}
     </div>
   );
 }
