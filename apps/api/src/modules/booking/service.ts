@@ -37,7 +37,7 @@ import {
   releaseTeeTimeAllocations,
   reserve,
 } from '../resources/service.js';
-import { recomputeCharges } from '../pricing/service.js';
+import { recomputeTeeTimeCharges } from '../pricing/service.js';
 import { caddieTypes, computeGrid, type GridSlot } from '../teesheet/service.js';
 import type { Payable } from '../../domain/pricing.js';
 
@@ -554,7 +554,7 @@ async function placeBookings(
     await ensureCaddie(tx, teeTime, r.course, req.holes, caddieRts);
     await reserveOptions(tx, teeTime, r.course, req.holes, bookingId, optionsPerItem[i]!);
     await syncTeeTime(tx, teeTime.id);
-    const priced = await recomputeCharges(tx, bookingId, theClub, r.course);
+    const priced = (await recomputeTeeTimeCharges(tx, teeTime.id, theClub, r.course)).get(bookingId)!;
 
     await audit(tx, {
       clubId: theClub.id,
@@ -673,7 +673,7 @@ export async function cancelBooking(
   opts: { actor: Actor; reason?: string | null },
 ): Promise<BookingDetail> {
   await runTx(deps.db, async (tx) => {
-    const { booking } = await lockBookingWith(tx, bookingId);
+    const { booking, teeTimes } = await lockBookingWith(tx, bookingId);
     if (booking.status === 'cancelled') return; // idempotent
     await tx.query(
       `UPDATE bookings SET status = 'cancelled', cancelled_at = now(), cancel_reason = $2, updated_at = now()
@@ -682,6 +682,9 @@ export async function cancelBooking(
     );
     const released = await releaseBookingAllocations(tx, bookingId);
     await syncTeeTime(tx, booking.teeTimeId);
+    // Les réservations restantes se partagent désormais le caddie.
+    const tt = teeTimes.get(booking.teeTimeId)!;
+    await recomputeTeeTimeCharges(tx, tt.id, await getClub(tx, booking.clubId), await getCourse(tx, tt.courseId));
     await audit(tx, {
       clubId: booking.clubId,
       actor: opts.actor,
@@ -751,7 +754,10 @@ export async function moveBooking(
     await reserveOptions(tx, targetTt, course, booking.holes, booking.id, options);
     await syncTeeTime(tx, targetId);
     await syncTeeTime(tx, booking.teeTimeId);
-    const priced = await recomputeCharges(tx, booking.id, club, course);
+    const priced = (await recomputeTeeTimeCharges(tx, targetId, club, course)).get(booking.id)!;
+    // Les réservations restées sur l'ancien départ reprennent le caddie à leur compte.
+    const sourceTt = teeTimes.get(booking.teeTimeId)!;
+    await recomputeTeeTimeCharges(tx, sourceTt.id, club, await getCourse(tx, sourceTt.courseId));
 
     await audit(tx, {
       clubId: booking.clubId,
@@ -855,7 +861,7 @@ export async function updateBooking(
       }
     }
     await syncTeeTime(tx, teeTime.id);
-    const priced = await recomputeCharges(tx, booking.id, await getClub(tx, booking.clubId), course);
+    const priced = (await recomputeTeeTimeCharges(tx, teeTime.id, await getClub(tx, booking.clubId), course)).get(booking.id)!;
 
     await audit(tx, {
       clubId: booking.clubId,

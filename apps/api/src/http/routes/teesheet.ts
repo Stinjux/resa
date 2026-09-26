@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { assertCan, assertDateVisible, can } from '../../modules/auth/permissions.js';
 import { getCourse } from '../../modules/catalog/repository.js';
-import { quote } from '../../modules/pricing/service.js';
+import { quoteNewBooking } from '../../modules/pricing/service.js';
 import { getAvailability, getOptionsAvailability, getTeeSheet } from '../../modules/teesheet/service.js';
 import { clubOf } from '../auth.js';
 import type { AppDeps } from '../server.js';
@@ -47,7 +47,7 @@ export function teeSheetRoutes(app: FastifyInstance, deps: AppDeps) {
     const club = await clubOf.course(deps, body.courseId);
     const course = await getCourse(deps.db, body.courseId);
     return {
-      quote: await quote(deps.db, {
+      quote: await quoteNewBooking(deps.db, {
         club,
         course,
         startsAt: new Date(body.startsAt),

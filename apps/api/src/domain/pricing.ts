@@ -98,7 +98,14 @@ export interface QuoteInput {
   greenFee: Tariff | null;
   privateSurcharge: Tariff | null;
   /** Caddie : facturé en entier à CHAQUE réservation (règle validée). */
-  caddie: { resourceTypeId: string; label: string; price9Minor: number; price18Minor: number } | null;
+  /** Caddie : prix du départ (9/18) et part due par CETTE réservation. */
+  caddie: {
+    resourceTypeId: string;
+    label: string;
+    price9Minor: number;
+    price18Minor: number;
+    share?: { amountMinor: number; bookingPlayers: number; teeTimePlayers: number; bookings: number };
+  } | null;
   caddiePayment: Payable;
   options: Array<{ resourceTypeId: string; label: string; quantity: number; price9Minor: number; price18Minor: number }>;
 }
@@ -149,15 +156,23 @@ export function buildQuote(input: QuoteInput): Quote {
   }
 
   if (input.caddie) {
-    push({
-      kind: 'caddie',
-      tariffId: null,
-      resourceTypeId: input.caddie.resourceTypeId,
-      label: `${input.caddie.label} (${input.holes} trous)`,
-      quantity: 1,
-      unitAmountMinor: byHoles(input.caddie),
-      payable: input.caddiePayment,
-    });
+    const share = input.caddie.share;
+    const full = byHoles(input.caddie);
+    const shared = share && share.bookings > 1;
+    const amount = share ? share.amountMinor : full;
+    if (amount > 0 || !shared) {
+      push({
+        kind: 'caddie',
+        tariffId: null,
+        resourceTypeId: input.caddie.resourceTypeId,
+        label: shared
+          ? `${input.caddie.label} (${input.holes} trous) — part du départ partagé, ${full / 100} ${input.currency} au total`
+          : `${input.caddie.label} (${input.holes} trous)`,
+        quantity: 1,
+        unitAmountMinor: amount,
+        payable: input.caddiePayment,
+      });
+    }
   }
 
   for (const o of input.options) {
@@ -182,4 +197,36 @@ export function buildQuote(input: QuoteInput): Quote {
     dueWithBookingMinor: sum((l) => (l.payable === 'with_booking' ? l.totalMinor : 0)),
     dueOnSiteMinor: sum((l) => (l.payable === 'on_site' ? l.totalMinor : 0)),
   };
+}
+
+export type CaddieFeeSplit = 'pro_rata_players' | 'equal' | 'first_booking';
+
+/**
+ * Répartit le prix unique du caddie d'un départ entre ses réservations
+ * (dans l'ordre de réservation). La somme des parts vaut exactement le prix :
+ * les centimes restants vont aux plus grands restes, puis aux premières.
+ */
+export function splitCaddieFee(totalMinor: number, bookings: Array<{ id: string; players: number }>, mode: CaddieFeeSplit): Map<string, number> {
+  const result = new Map<string, number>();
+  if (bookings.length === 0) return result;
+  if (mode === 'first_booking') {
+    bookings.forEach((b, i) => result.set(b.id, i === 0 ? totalMinor : 0));
+    return result;
+  }
+  // Parts en unités entières de la devise (pas de centimes) pour des montants lisibles.
+  const unit = totalMinor % 100 === 0 ? 100 : 1;
+  const units = totalMinor / unit;
+  const weights = bookings.map((b) => (mode === 'equal' ? 1 : b.players));
+  const sum = weights.reduce((a, w) => a + w, 0);
+  const exact = weights.map((w) => (units * w) / sum);
+  const base = exact.map(Math.floor);
+  let left = units - base.reduce((a, n) => a + n, 0);
+  const order = exact.map((x, i) => ({ i, r: x - Math.floor(x) })).sort((a, b) => b.r - a.r || a.i - b.i);
+  for (const { i } of order) {
+    if (left <= 0) break;
+    base[i]! += 1;
+    left -= 1;
+  }
+  bookings.forEach((b, i) => result.set(b.id, base[i]! * unit));
+  return result;
 }

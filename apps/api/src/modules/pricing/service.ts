@@ -2,7 +2,7 @@
 // calcul au domaine (domain/pricing.ts). Aucun lien avec un POS.
 
 import type { Queryable, Tx } from '../../db/pool.js';
-import { buildQuote, selectTariff, type Payable, type Quote } from '../../domain/pricing.js';
+import { buildQuote, selectTariff, splitCaddieFee, type Payable, type Quote } from '../../domain/pricing.js';
 import type { Holes } from '../../domain/tee-time-rules.js';
 import { instantToLocal, isoWeekday } from '../../shared/time.js';
 import { listResourceTypes, listTariffs, type Club, type Course, type ResourceType } from '../catalog/repository.js';
@@ -17,6 +17,13 @@ export interface QuoteRequest {
   customerCategory: string;
   caddiePayment: Payable;
   options: Array<{ resourceTypeId: string; quantity: number }>;
+  /** Réservations du départ (ordre de réservation) et identifiant de celle
+   *  qu'on chiffre, pour calculer sa part du caddie. */
+  caddieSharing?: { bookings: Array<{ id: string; players: number }>; bookingId: string };
+}
+
+function caddieType(resourceTypes: ResourceType[]): ResourceType | null {
+  return resourceTypes.find((rt) => rt.active && rt.scope === 'tee_time' && rt.requiredPerTeeTime) ?? null;
 }
 
 export async function quote(q: Queryable, req: QuoteRequest, preloaded?: { resourceTypes?: ResourceType[] }): Promise<Quote> {
@@ -33,7 +40,19 @@ export async function quote(q: Queryable, req: QuoteRequest, preloaded?: { resou
     isoWeekday: isoWeekday(local.date),
     minuteOfDay: local.minuteOfDay,
   };
-  const caddie = resourceTypes.find((rt) => rt.active && rt.scope === 'tee_time' && rt.requiredPerTeeTime) ?? null;
+  const caddie = caddieType(resourceTypes);
+  let share: NonNullable<Parameters<typeof buildQuote>[0]['caddie']>['share'];
+  if (caddie && req.caddieSharing) {
+    const { bookings, bookingId } = req.caddieSharing;
+    const full = req.holes === 9 ? caddie.price9Minor : caddie.price18Minor;
+    const parts = splitCaddieFee(full, bookings, req.club.caddieFeeSplit);
+    share = {
+      amountMinor: parts.get(bookingId) ?? full,
+      bookingPlayers: req.players,
+      teeTimePlayers: bookings.reduce((n, b) => n + b.players, 0),
+      bookings: bookings.length,
+    };
+  }
   return buildQuote({
     currency: req.club.currency,
     taxRateBp: req.club.taxRateBp,
@@ -43,7 +62,7 @@ export async function quote(q: Queryable, req: QuoteRequest, preloaded?: { resou
     isPrivate: req.isPrivate,
     greenFee: selectTariff(tariffs, { ...ctx, product: 'green_fee' }),
     privateSurcharge: selectTariff(tariffs, { ...ctx, product: 'private_surcharge' }),
-    caddie: caddie && { resourceTypeId: caddie.id, label: caddie.name, price9Minor: caddie.price9Minor, price18Minor: caddie.price18Minor },
+    caddie: caddie && { resourceTypeId: caddie.id, label: caddie.name, price9Minor: caddie.price9Minor, price18Minor: caddie.price18Minor, share },
     caddiePayment: req.caddiePayment,
     options: req.options.map((o) => {
       const rt = resourceTypes.find((r) => r.id === o.resourceTypeId)!;
@@ -52,23 +71,19 @@ export async function quote(q: Queryable, req: QuoteRequest, preloaded?: { resou
   });
 }
 
-/** Remplace les lignes de prix d'une réservation par un calcul à jour et
- *  met à jour ses totaux. À appeler dans la transaction qui la modifie. */
-export async function recomputeCharges(tx: Tx, bookingId: string, club: Club, course: Course): Promise<Quote> {
-  const { rows } = await tx.query(
-    `SELECT b.players, b.holes, b.is_private AS "isPrivate", b.customer_category AS "customerCategory",
-            b.caddie_payment AS "caddiePayment", t.starts_at AS "startsAt"
-       FROM bookings b JOIN tee_times t ON t.id = b.tee_time_id WHERE b.id = $1`,
-    [bookingId],
+/** Devis d'une réservation qui rejoindrait un départ : tient compte des
+ *  réservations déjà présentes pour la part du caddie. */
+export async function quoteNewBooking(q: Queryable, req: Omit<QuoteRequest, 'caddieSharing'>): Promise<Quote> {
+  const { rows } = await q.query(
+    `SELECT b.id, b.players FROM bookings b JOIN tee_times t ON t.id = b.tee_time_id
+      WHERE t.course_id = $1 AND t.starts_at = $2 AND b.status = 'confirmed' ORDER BY b.created_at, b.id`,
+    [req.course.id, req.startsAt],
   );
-  const b = rows[0];
-  const options = await tx.query(
-    `SELECT resource_type_id AS "resourceTypeId", sum(quantity)::int AS quantity
-       FROM resource_allocations WHERE booking_id = $1 AND status = 'active' GROUP BY resource_type_id`,
-    [bookingId],
-  );
-  const result = await quote(tx, { club, course, ...b, options: options.rows });
+  const NEW = '__new__';
+  return quote(q, { ...req, caddieSharing: { bookings: [...rows, { id: NEW, players: req.players }], bookingId: NEW } });
+}
 
+async function writeCharges(tx: Tx, bookingId: string, result: Quote): Promise<void> {
   await tx.query('DELETE FROM booking_charges WHERE booking_id = $1', [bookingId]);
   for (const [i, l] of result.lines.entries()) {
     await tx.query(
@@ -84,5 +99,40 @@ export async function recomputeCharges(tx: Tx, bookingId: string, club: Club, co
       WHERE id = $1`,
     [bookingId, result.currency, result.totalMinor, result.dueWithBookingMinor, result.dueOnSiteMinor],
   );
-  return result;
+}
+
+/**
+ * Recalcule les lignes de prix de TOUTES les réservations confirmées d'un
+ * départ (la part du caddie de chacune dépend des autres). À appeler dans la
+ * transaction qui modifie le départ, après la modification.
+ * Renvoie les devis par réservation.
+ */
+export async function recomputeTeeTimeCharges(tx: Tx, teeTimeId: string, club: Club, course: Course): Promise<Map<string, Quote>> {
+  const { rows } = await tx.query(
+    `SELECT b.id, b.players, b.holes, b.is_private AS "isPrivate", b.customer_category AS "customerCategory",
+            b.caddie_payment AS "caddiePayment", t.starts_at AS "startsAt"
+       FROM bookings b JOIN tee_times t ON t.id = b.tee_time_id
+      WHERE b.tee_time_id = $1 AND b.status = 'confirmed' ORDER BY b.created_at, b.id`,
+    [teeTimeId],
+  );
+  const resourceTypes = await listResourceTypes(tx, club.id, { activeOnly: false });
+  const sharing = rows.map((r) => ({ id: r.id as string, players: r.players as number }));
+  const quotes = new Map<string, Quote>();
+  for (const b of rows) {
+    const options = await tx.query(
+      `SELECT resource_type_id AS "resourceTypeId", sum(quantity)::int AS quantity
+         FROM resource_allocations WHERE booking_id = $1 AND status = 'active' GROUP BY resource_type_id`,
+      [b.id],
+    );
+    const result = await quote(
+      tx,
+      { club, course, startsAt: b.startsAt, players: b.players, holes: b.holes, isPrivate: b.isPrivate,
+        customerCategory: b.customerCategory, caddiePayment: b.caddiePayment, options: options.rows,
+        caddieSharing: { bookings: sharing, bookingId: b.id } },
+      { resourceTypes },
+    );
+    await writeCharges(tx, b.id, result);
+    quotes.set(b.id, result);
+  }
+  return quotes;
 }

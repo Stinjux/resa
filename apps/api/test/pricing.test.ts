@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildQuote, selectTariff, withTax, type Tariff } from '../src/domain/pricing.js';
+import { buildQuote, selectTariff, splitCaddieFee, withTax, type Tariff } from '../src/domain/pricing.js';
 
 function tariff(p: Partial<Tariff>): Tariff {
   return {
@@ -65,5 +65,25 @@ describe('devis', () => {
   it('calcule la TVA incluse ou en sus', () => {
     expect(withTax(120000, 2000, true)).toEqual({ ttc: 120000, tax: 20000 });
     expect(withTax(100000, 2000, false)).toEqual({ ttc: 120000, tax: 20000 });
+  });
+});
+
+describe('répartition du caddie entre réservations d’un même départ', () => {
+  const b = (id: string, players: number) => ({ id, players });
+  const sum = (m: Map<string, number>) => [...m.values()].reduce((a, n) => a + n, 0);
+
+  it('au prorata des joueurs, le total vaut toujours le prix du caddie', () => {
+    expect([...splitCaddieFee(20000, [b('a', 2), b('b', 2)], 'pro_rata_players').values()]).toEqual([10000, 10000]);
+    expect([...splitCaddieFee(20000, [b('a', 3), b('b', 1)], 'pro_rata_players').values()]).toEqual([15000, 5000]);
+    const three = splitCaddieFee(20000, [b('a', 1), b('b', 1), b('c', 1)], 'pro_rata_players');
+    expect(sum(three)).toBe(20000);
+    expect([...three.values()]).toEqual([6700, 6700, 6600]); // dirhams entiers, sans centimes
+    expect(sum(splitCaddieFee(10000, [b('a', 1), b('b', 2)], 'pro_rata_players'))).toBe(10000);
+  });
+
+  it('à parts égales ou entièrement à la première réservation', () => {
+    expect([...splitCaddieFee(20000, [b('a', 3), b('b', 1)], 'equal').values()]).toEqual([10000, 10000]);
+    expect([...splitCaddieFee(20000, [b('a', 3), b('b', 1)], 'first_booking').values()]).toEqual([20000, 0]);
+    expect([...splitCaddieFee(20000, [b('a', 4)], 'pro_rata_players').values()]).toEqual([20000]);
   });
 });

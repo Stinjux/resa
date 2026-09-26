@@ -12,11 +12,14 @@
 - **Départ privé** (supplément) : les places restantes ne sont plus proposées.
 - **Caddie obligatoire pour chaque départ** (1 à 4 joueurs), capacité vérifiée
   avant confirmation, identité attribuable plus tard.
-- Caddie : **200 DH (18 trous) / 100 DH (9 trous) facturés à chaque
-  réservation** (décision du 26/09/2026), payables **sur place** ou **avec la
-  réservation** au choix. Un seul caddie physique par départ. Montants en
-  configuration (`resource_types.price_9_minor / price_18_minor`), mode de
-  paiement par défaut par golf (`clubs.default_caddie_payment`).
+- Caddie : **200 DH (18 trous) / 100 DH (9 trous) par départ, quel que soit
+  le nombre de réservations** (décision du 26/09/2026). Le montant est réparti
+  entre les réservations du départ, **au prorata des joueurs** par défaut
+  (2+2 → 100 + 100 ; 3+1 → 150 + 50), recalculé à chaque réunion,
+  déplacement, modification ou annulation. Répartition configurable par golf
+  (`clubs.caddie_fee_split` : prorata, parts égales, première réservation).
+  Chaque réservation choisit de payer sa part **sur place** ou **avec la
+  réservation**. Montants en configuration (`resource_types.price_*_minor`).
 - **Réception** : ne voit que son golf et les golfeurs ayant réservé dans son golf.
 - **Starter** : départs du jour et des 6 jours suivants ; attribue le caddie
   nommé et le matériel numéroté ; ne voit pas les coordonnées des golfeurs.
@@ -38,13 +41,13 @@
 | TVA de démo | 20 %, prix TTC | `clubs.tax_rate_bp`, `clubs.prices_include_tax` |
 | Conflit entre tarifs | La règle la plus **prioritaire** gagne (puis la plus spécifique), pas la moins chère | `tariffs.priority` |
 | Catégorie tarifaire (résident…) | Choisie par le personnel ; le client en ligne paie le tarif standard | `bookings.customer_category` |
-| Réunion de deux réservations | Chaque réservation paie son caddie ; le prix est recalculé à l'heure du nouveau départ | `modules/pricing` |
+| Répartition du caddie partagé | Au prorata des joueurs, en dirhams entiers (1+1+1 → 67 + 67 + 66) | `clubs.caddie_fee_split` |
+| Réunion / déplacement | Prix recalculés à l'heure du nouveau départ, pour toutes les réservations des deux départs | `modules/pricing` |
 | Golfeur déjà client d'un autre golf du groupe | Invisible pour la réception : une nouvelle fiche est créée | `modules/customers` |
 
 ## En attente de décision
 
-1. Confirmer : deux réservations réunies sur un départ paient **chacune** 200 DH
-   de caddie (400 DH encaissés pour un caddie) ?
+1. Répartition du caddie partagé : le prorata des joueurs convient-il ?
 2. Tarifs réels par golf ; supplément départ privé (forfait ou places non vendues ?) ;
    voiturette par véhicule ou par joueur.
 3. Taux de TVA réellement applicables et affichage TTC.

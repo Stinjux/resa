@@ -19,6 +19,7 @@ export interface Club {
   minLeadMinutes: number;
   taxRateBp: number;
   defaultCaddiePayment: 'on_site' | 'with_booking';
+  caddieFeeSplit: 'pro_rata_players' | 'equal' | 'first_booking';
 }
 
 export interface Course {
@@ -54,7 +55,8 @@ export interface ResourceType {
 const CLUB_COLUMNS = `id, organization_id AS "organizationId", code, name, timezone, currency,
   default_locale AS "defaultLocale", prices_include_tax AS "pricesIncludeTax",
   booking_horizon_days AS "bookingHorizonDays", min_lead_minutes AS "minLeadMinutes",
-  tax_rate_bp AS "taxRateBp", default_caddie_payment AS "defaultCaddiePayment"`;
+  tax_rate_bp AS "taxRateBp", default_caddie_payment AS "defaultCaddiePayment",
+  caddie_fee_split AS "caddieFeeSplit"`;
 
 const COURSE_COLUMNS = `id, club_id AS "clubId", code, name, allowed_holes AS "allowedHoles",
   default_interval_minutes AS "defaultIntervalMinutes", default_max_players AS "defaultMaxPlayers",
