@@ -21,9 +21,23 @@ cp apps/api/.env.example apps/api/.env   # adapter DATABASE_URL si besoin
 npm run db:migrate
 npm run db:seed        # 4 golfs de démonstration (valeurs à remplacer)
 npm run db:reset       # (dév. uniquement) efface la base, migre et recharge la démo
-npm run dev            # API sur http://127.0.0.1:3000
+npm start              # compile l'interface et ouvre tout sur http://127.0.0.1:3000
+npm run dev            # API seule (rechargement auto) ; `npm run dev:web` pour l'interface sur :5173
 npm test               # utilise TEST_DATABASE_URL (base effacée à chaque exécution)
 ```
+
+## Interface web (`apps/web`, React + Vite)
+
+Servie par le serveur de l'API une fois compilée (`npm start`) :
+
+- **Réserver** (public / client) : golf → date → 9/18 trous → joueurs → départ → options → coordonnées → récapitulatif → confirmation
+- **Feuille de départs** (réception, direction) : journée par parcours, places, privé, caddie ;
+  création téléphonique, groupe réparti sur des départs consécutifs, modification, réunion/déplacement, annulation, historique
+- **Starter** : aujourd'hui / demain / semaine, caddie nommé et matériel numéroté, montant à encaisser sur place
+- **Mes réservations** (client)
+
+Les boutons de comptes de démonstration de la page de connexion se masquent
+en compilant avec `VITE_DEMO=false`.
 
 ## Organisation du code (`apps/api/src`)
 

@@ -6,9 +6,9 @@ Chaque étape livre un logiciel fonctionnel et testé.
 |---|---|---|
 | 1 | **Moteur de réservation** : schéma, grille configurable, départs, 4 joueurs max, privé, réunion, caddie unique obligatoire, matériel, concurrence, groupe, audit, API | ✅ livré |
 | 2 | **Comptes, rôles, permissions**, sessions, confidentialité des golfeurs par golf, API starter (caddie nommé, matériel numéroté), **tarification** (green fee, privé, caddie, matériel, TVA) et données d'exemple | ✅ livré |
-| 3 | **Interface interne** : calendrier des départs, création téléphone/groupe, modification, annulation, réunion (glisser-déposer), vue starter (attribution caddie + matériel nominatif) | à faire |
+| 3 | **Interface web** : feuille de départs, création téléphone/groupe, modification, annulation, réunion, vue starter, parcours client (première version) | ✅ livré |
 | 4 | **Configuration par golf** : horaires, exceptions, fermetures, intervalles, capacités, tarifs, inventaires, effectif caddies | à faire |
-| 5 | **Parcours client** : golf → date → 9/18 → joueurs → créneau → options → coordonnées → confirmation | à faire |
+| 5 | **Parcours client** : première version livrée à l'étape 3 ; reste paiement en ligne, e-mails de confirmation, annulation par le client | partiel |
 | 6 | **Commandes et paiements** : commandes internes à partir des lignes de prix, états dû/payé/remboursé, contrat POS + adaptateur local, file de synchronisation idempotente et journal d'erreurs | à faire |
 | 7 | **International et exploitation** : langues (fr/en/ar), devises, taxes, déploiement, sauvegardes, supervision | à faire |
 
