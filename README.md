@@ -87,6 +87,8 @@ Servie par le serveur de l'API une fois compilée (`npm start`) :
   réception ou la direction** avant réservation ; confirmation envoyée au client (voir `docs/MESSAGERIE.md`)
 - **Caisse** (réception, direction) : reçus, factures et avoirs imprimables (PDF), clôture de caisse (Z)
   avec écart d'espèces, journal et export comptable (voir `docs/FACTURATION.md`)
+- **Partenaires** (tour-opérateurs, agences) : tarifs négociés, allotements avec release automatique,
+  portail de réservation pour le partenaire, relevé de compte (voir `docs/PARTENAIRES.md`)
 - **E-mails aux clients** : confirmation, modification, annulation et rappel, dans la langue du client ;
   consultables dans Configuration → E-mails (voir `docs/EMAILS.md`)
 - Interface client en **français, anglais et arabe** (sélecteur de langue en haut à droite)
@@ -138,6 +140,7 @@ Comptes (mot de passe `Demo2026!`, **démo uniquement**) :
 | `reception.g1@demo.ma` … `g4` | Réception : départs, réservations et golfeurs de son golf |
 | `starter.g1@demo.ma` … `g4` | Starter : départs du jour et de la semaine, caddies et matériel |
 | `client@demo.ma` | Client |
+| `partenaire@demo.ma` | Portail du tour-opérateur « Atlas Golf Tours (démo) » |
 
 ## Rôles
 
@@ -195,6 +198,10 @@ est stockée, mots de passe hachés avec scrypt).
 | GET | `/api/clubs/:clubId/invoices[.csv]?from=&to=` | direction | Journal des factures / export comptable |
 | GET · POST | `/api/clubs/:clubId/cash` · `/cash/closings` | réception | Caisse en cours ; clôture (Z) |
 | GET | `/api/clubs/:clubId/emails` · `/api/emails/:id` | direction | E-mails envoyés aux clients, aperçu |
+| GET · POST · PATCH | `/api/partners[/:id]` · `/api/partners/:id/users` | direction (lecture : réception) | Partenaires, accès au portail |
+| GET · POST | `/api/clubs/:clubId/allotments` · `/allotments/:id/cancel` | direction | Allotements |
+| GET | `/api/partners/:id/statement[.csv]?clubId=&from=&to=` | direction | Relevé de compte |
+| GET · POST | `/api/partner/availability` · `/quote` · `/bookings` · `/bookings/:id/cancel` | partenaire | Portail partenaire |
 
 Codes d'erreur métier stables : `TEE_TIME_FULL`, `TEE_TIME_PRIVATE`,
 `PRIVATE_REQUIRES_EMPTY_TEE_TIME`, `HOLES_MISMATCH`, `CADDIE_UNAVAILABLE`,

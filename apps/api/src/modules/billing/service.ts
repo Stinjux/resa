@@ -77,8 +77,11 @@ export async function issueInvoice(db: Db, bookingId: string, input: { buyer?: P
   const id = await withTransaction(db, async (tx) => {
     const { rows: [o] } = await tx.query(
       `SELECT o.id, o.club_id AS "clubId", o.currency, o.total_minor AS total, o.tax_minor AS tax,
-              nullif(trim(coalesce(cu.first_name, '') || ' ' || coalesce(cu.last_name, '')), '') AS "customerName"
-         FROM orders o LEFT JOIN customers cu ON cu.id = o.customer_id WHERE o.booking_id = $1 FOR UPDATE OF o`,
+              nullif(trim(coalesce(cu.first_name, '') || ' ' || coalesce(cu.last_name, '')), '') AS "customerName",
+              coalesce(p.legal_name, p.name) AS "partnerName", p.address AS "partnerAddress", p.ice AS "partnerIce"
+         FROM orders o JOIN bookings b ON b.id = o.booking_id LEFT JOIN customers cu ON cu.id = o.customer_id
+         LEFT JOIN partners p ON p.id = b.partner_id
+        WHERE o.booking_id = $1 FOR UPDATE OF o`,
       [bookingId],
     );
     if (!o) throw new DomainError('NOT_FOUND', 'Commande introuvable pour cette réservation.');
@@ -103,9 +106,12 @@ export async function issueInvoice(db: Db, bookingId: string, input: { buyer?: P
       return { label: l.label, quantity: l.quantity, unitHtMinor: Math.round(ht / l.quantity), totalHtMinor: ht,
         taxRateBp: l.taxRateBp, taxMinor: l.taxMinor, totalMinor: l.totalMinor };
     });
-    const name = input.buyer?.name?.trim() || o.customerName;
+    // Réservation d'un partenaire : facturée par défaut au partenaire.
+    const name = input.buyer?.name?.trim() || o.partnerName || o.customerName;
     if (!name) throw new DomainError('VALIDATION', 'Nom du client à indiquer sur la facture.');
-    const buyer: Buyer = { name, address: input.buyer?.address?.trim() || null, ice: input.buyer?.ice?.trim() || null };
+    const byPartner = !input.buyer?.name?.trim() && !!o.partnerName;
+    const buyer: Buyer = { name, address: input.buyer?.address?.trim() || (byPartner ? o.partnerAddress : null),
+      ice: input.buyer?.ice?.trim() || (byPartner ? o.partnerIce : null) };
     const now = new Date();
     const number = await nextNumber(tx, club, 'invoice', now);
     const paid = (await orderSummary(tx, o.id)).paidMinor;

@@ -7,13 +7,14 @@ import { Assistant } from './pages/Assistant';
 import { Config } from './pages/Config';
 import { Inbox } from './pages/Inbox';
 import { Cash } from './pages/Cash';
+import { PartnerPortal } from './pages/PartnerPortal';
 import { Reports } from './pages/Reports';
 import { Login } from './pages/Login';
 import { MyBookings } from './pages/MyBookings';
 import { StarterBoard } from './pages/StarterBoard';
 import { TeeSheet } from './pages/TeeSheet';
 
-type Page = 'book' | 'sheet' | 'starter' | 'mine' | 'config' | 'assistant' | 'reports' | 'inbox' | 'cash' | 'login';
+type Page = 'book' | 'sheet' | 'starter' | 'mine' | 'config' | 'assistant' | 'reports' | 'inbox' | 'cash' | 'partner' | 'login';
 
 export function hasRole(user: User | null, roles: string[]): boolean {
   return !!user?.roles.some((r) => roles.includes(r.role));
@@ -41,6 +42,7 @@ export function App() {
     setUser(u);
     if (hasRole(u, ['org_admin', 'club_admin', 'receptionist'])) setPage('sheet');
     else if (hasRole(u, ['starter'])) setPage('starter');
+    else if (u.partnerId) setPage('partner');
     else setPage('book');
   }
 
@@ -61,6 +63,7 @@ export function App() {
     ['assistant', 'Assistant IA', canSheet],
     ['reports', 'Rapports', hasRole(user, ['org_admin', 'club_admin'])],
     ['config', t('nav.config'), hasRole(user, ['org_admin', 'club_admin'])],
+    ['partner', t('nav.partner'), !!user?.partnerId],
     ['book', t('nav.book'), !user || !!user.customerId],
     ['mine', t('nav.mine'), !!user?.customerId],
   ];
@@ -100,6 +103,7 @@ export function App() {
         {page === 'inbox' && user && <Inbox user={user} onChanged={refreshPending} />}
         {page === 'reports' && user && <Reports user={user} />}
         {page === 'cash' && user && <Cash user={user} />}
+        {page === 'partner' && user?.partnerId && <PartnerPortal user={user} />}
       </main>
     </>
   );

@@ -3,8 +3,9 @@ import { get, patch, post, put, type User } from '../api';
 import { addDays, money, todayIn } from '../format';
 import { EntityForm, weekdaysLabel, type Field } from './EntityForm';
 import { ErrorBox, useClubs } from './common';
+import { PartnersTab } from './Partners';
 
-type Tab = 'general' | 'schedule' | 'tariffs' | 'resources' | 'emails' | 'pos';
+type Tab = 'general' | 'schedule' | 'tariffs' | 'resources' | 'partners' | 'emails' | 'pos';
 
 export function Config({ user }: { user: User }) {
   const [clubsVersion, setClubsVersion] = useState(0);
@@ -39,7 +40,7 @@ export function Config({ user }: { user: User }) {
         )}
         {isOrgAdmin && <button className="btn sm" onClick={() => setCreating(true)}>+ Nouveau golf</button>}
         <nav className="nav">
-          {([['general', 'Général'], ['schedule', 'Parcours & horaires'], ['tariffs', 'Tarifs'], ['resources', 'Caddies & matériel'], ['emails', 'E-mails'], ['pos', 'Caisse (POS)']] as Array<[Tab, string]>)
+          {([['general', 'Général'], ['schedule', 'Parcours & horaires'], ['tariffs', 'Tarifs'], ['resources', 'Caddies & matériel'], ['partners', 'Partenaires'], ['emails', 'E-mails'], ['pos', 'Caisse (POS)']] as Array<[Tab, string]>)
             .map(([t, l]) => <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{l}</button>)}
         </nav>
       </div>
@@ -74,6 +75,8 @@ export function Config({ user }: { user: User }) {
       {cfg && tab === 'schedule' && <Schedule cfg={cfg} base={base} save={save} />}
       {cfg && tab === 'tariffs' && <Tariffs cfg={cfg} save={save} />}
       {cfg && tab === 'resources' && <Resources cfg={cfg} base={base} save={save} reload={load} />}
+      {cfg && tab === 'partners' && <PartnersTab cfg={cfg} clubId={clubId!}
+        categories={[...new Set<string>(cfg.tariffs.map((t: any) => t.customerCategory).filter(Boolean))]} />}
       {cfg && tab === 'emails' && <Emails clubId={clubId!} enabled={cfg.club.emailEnabled} />}
       {cfg && tab === 'pos' && <PosSync clubId={clubId!} posProvider={cfg.club.posProvider} />}
     </div>

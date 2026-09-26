@@ -55,7 +55,7 @@ export async function unblockRange(db: Db, input: { courseId: string; date: stri
   const to = parseTimeMaybe(input.to) ?? '23:59';
   const club = await getClub(db, course.clubId);
   const res = await db.query(
-    `UPDATE tee_times SET blocked_reason = NULL, blocked_by = NULL, blocked_at = NULL, updated_at = now()
+    `UPDATE tee_times SET blocked_reason = NULL, blocked_by = NULL, blocked_at = NULL, held_allotment_id = NULL, held_until = NULL, updated_at = now()
       WHERE course_id = $1 AND local_date = $2 AND blocked_reason IS NOT NULL
         AND to_char(starts_at AT TIME ZONE $5, 'HH24:MI') BETWEEN $3 AND $4`,
     [course.id, input.date, from, to, club.timezone],

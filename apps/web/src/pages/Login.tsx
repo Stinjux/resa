@@ -9,6 +9,7 @@ const DEMO = [
   ['direction.g1@demo.ma', 'Direction G1'],
   ['admin@demo.ma', 'Admin groupe'],
   ['client@demo.ma', 'Client'],
+  ['partenaire@demo.ma', 'Partenaire (TO)'],
 ];
 
 export function Login({ onLogin }: { onLogin: (u: User) => void }) {

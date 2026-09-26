@@ -24,7 +24,7 @@ export function longDate(date: string): string {
 }
 
 export const CHANNEL_LABEL: Record<string, string> = {
-  web: 'Web', phone: 'Téléphone', group: 'Groupe', walk_in: 'Sur place', staff: 'Personnel',
+  web: 'Web', phone: 'Téléphone', group: 'Groupe', walk_in: 'Sur place', staff: 'Personnel', whatsapp: 'WhatsApp', sms: 'SMS', partner: 'Portail partenaire',
 };
 
 export const ROLE_LABEL: Record<string, string> = {

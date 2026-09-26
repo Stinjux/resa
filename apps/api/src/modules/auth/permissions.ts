@@ -37,6 +37,9 @@ export interface Principal {
   organizationId: string;
   displayName: string;
   customerId: string | null;
+  /** Compte du portail partenaire (tour-opérateur, agence…). */
+  partnerId?: string | null;
+  partnerName?: string | null;
   roles: Array<{ clubId: string | null; role: Role }>;
 }
 

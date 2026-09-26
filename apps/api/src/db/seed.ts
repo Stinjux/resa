@@ -9,6 +9,7 @@ import { DateTime } from 'luxon';
 import { loadConfig } from '../config.js';
 import { createPool, withTransaction, type Db } from './pool.js';
 import { createStaffUser, registerCustomer } from '../modules/auth/service.js';
+import { createAllotment, createPartnerUser, savePartner } from '../modules/partners/service.js';
 import { createBooking, createGroupBooking, moveBooking } from '../modules/booking/service.js';
 import { recordStaffPayment } from '../modules/orders/service.js';
 import { assignCaddie, assignUnits } from '../modules/starter/service.js';
@@ -95,9 +96,12 @@ async function seedConfig(db: Db): Promise<{ orgId: string; clubs: Array<{ id: s
                 ($1, 'green_fee', 'Green fee 9 trous twilight (après 15h)', 9, NULL, NULL, '15:00', '23:59', $7, 'per_player', 1),
                 ($1, 'green_fee', 'Green fee 18 trous résident', 18, 'resident', NULL, NULL, NULL, $8, 'per_player', 2),
                 ($1, 'green_fee', 'Green fee 9 trous résident', 9, 'resident', NULL, NULL, NULL, $9, 'per_player', 2),
+                ($1, 'green_fee', 'Green fee 18 trous tour-opérateur', 18, 'to', NULL, NULL, NULL, $11, 'per_player', 2),
+                ($1, 'green_fee', 'Green fee 9 trous tour-opérateur', 9, 'to', NULL, NULL, NULL, $12, 'per_player', 2),
                 ($1, 'private_surcharge', 'Supplément départ privé', NULL, NULL, NULL, NULL, NULL, $10, 'per_booking', 0)`,
         [clubId, MAD(gf18), MAD(gf18 + 150), MAD(Math.round(gf18 * 0.7 / 10) * 10), MAD(gf9), MAD(gf9 + 100),
-          MAD(Math.round(gf9 * 0.7 / 10) * 10), MAD(900), MAD(550), MAD(1000)],
+          MAD(Math.round(gf9 * 0.7 / 10) * 10), MAD(900), MAD(550), MAD(1000),
+          MAD(Math.round(gf18 * 0.8 / 10) * 10), MAD(Math.round(gf9 * 0.8 / 10) * 10)],
       );
 
       // Caddies et matériel.
@@ -238,6 +242,27 @@ async function seedWhatsAppRequest(db: Db, club: { id: string; courseId: string 
   await db.query(`UPDATE message_threads SET locale = 'fr' WHERE id = $1`, [threadId]);
 }
 
+/** Tour-opérateur de démonstration : tarifs « to », allotement sur G1, accès au portail. */
+async function seedPartner(db: Db, orgId: string, club: { id: string; courseId: string }) {
+  const actor = { type: 'system' as const };
+  const partner = await savePartner(db, orgId, null, {
+    code: 'ATLAS', name: 'Atlas Golf Tours (démo)', kind: 'tour_operator', priceCategory: 'to', onAccount: true, paymentTermsDays: 30,
+    contactName: 'Service groupes', email: 'groupes@atlas-golf.example', legalName: 'Atlas Golf Tours SARL (démo)',
+    address: 'Adresse de démonstration, Marrakech', ice: '000000000000099',
+  }, actor);
+  await createPartnerUser(db, partner.id, { email: 'partenaire@demo.ma', displayName: 'Agent Atlas', password: DEMO_PASSWORD }, actor);
+  const day = (n: number) => DateTime.now().setZone('Africa/Casablanca').plus({ days: n }).toISODate()!;
+  await createAllotment(db, club.id, { partnerId: partner.id, courseId: club.courseId, dateFrom: day(2), dateTo: day(30),
+    startTime: '08:00', endTime: '08:30', releaseDays: 2, note: 'Contrat saison (démo)' }, actor, new Date());
+  const slot = (await getAvailability(db, { courseId: club.courseId, date: day(3), players: 4, holes: 18, now: new Date(),
+    enforceBookingWindow: false, partnerId: partner.id })).slots.find((s) => s.heldForPartner);
+  if (slot) {
+    await createBooking({ db, now: () => new Date() }, { channel: 'partner', actor, partnerId: partner.id, partnerReference: 'ATL-24017',
+      customer: { firstName: 'Hans', lastName: 'Becker' } }, { courseId: club.courseId, startsAt: new Date(slot.startsAt), players: 4, holes: 18,
+      playerNames: ['Hans Becker', 'Anna Becker', 'Peter Schulz', 'Eva Schulz'] });
+  }
+}
+
 export async function seedDemo(db: Db): Promise<boolean> {
   const existing = await db.query(`SELECT 1 FROM organizations WHERE code = 'DEMO-MA'`);
   if (existing.rowCount) return false;
@@ -247,6 +272,7 @@ export async function seedDemo(db: Db): Promise<boolean> {
   await db.query(`UPDATE clubs SET pos_provider = 'local', messaging_provider = 'local' WHERE id = $1`, [clubs[0]!.id]);
   await seedBookings(db, clubs[0]!);
   await seedWhatsAppRequest(db, clubs[0]!);
+  await seedPartner(db, orgId, clubs[0]!);
   return true;
 }
 
@@ -260,7 +286,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   direction.g1@demo.ma     direction du golf G1 (idem g2…g4)
   reception.g1@demo.ma     réception G1
   starter.g1@demo.ma       starter G1
-  client@demo.ma           client`);
+  client@demo.ma           client
+  partenaire@demo.ma       portail du tour-opérateur Atlas (démo)`);
     })
     .finally(() => db.end());
 }

@@ -8,12 +8,14 @@ interface SheetBooking {
   id: string; reference: string; players: number; holes: number; isPrivate: boolean; channel: string;
   groupId: string | null; customerName: string | null; customerPhone: string | null; paymentStatus?: string;
   checkinStatus: 'expected' | 'arrived' | 'no_show'; customerNoShows: number;
+  partnerName: string | null; partnerReference: string | null;
   resources: Array<{ code: string; name: string; quantity: number }>;
 }
 export interface SheetRow {
   teeTimeId: string | null; startsAt: string; localTime: string; inGrid: boolean; maxPlayers: number;
   bookedPlayers: number; remaining: number; holes: number | null; allowedHoles: number[]; isPrivate: boolean;
   blockedReason: string | null; startedAt: string | null;
+  held: { partnerId: string; partnerName: string; until: string | null; remaining: number } | null;
   caddie: { reserved: boolean; caddieId: string | null; name: string | null }; bookings: SheetBooking[];
 }
 
@@ -103,13 +105,14 @@ export function TeeSheet({ user }: { user: User }) {
             <tbody>
               {visible.map((r) => {
                 const selected = (panel?.kind === 'new' || panel?.kind === 'group') && panel.row.startsAt === r.startsAt;
-                const clickable = manage && r.remaining > 0;
+                const clickable = manage && (r.remaining > 0 || (r.held?.remaining ?? 0) > 0);
                 return (
                   <tr key={r.startsAt} className={`${clickable ? 'slot' : ''} ${selected ? 'selected' : ''} ${r.blockedReason ? 'blocked' : ''}`}
                     onClick={() => clickable && setPanel({ kind: 'new', row: r })}>
                     <td className="time">{r.localTime}{!r.inGrid && <span className="badge warn"> hors grille</span>}
                       {r.startedAt && <span className="badge ok" title="Départ parti"> parti</span>}
                       {r.blockedReason && <div className="small" style={{ fontWeight: 400 }}><span className="badge warn">🔒 {r.blockedReason}</span>
+                        {r.held?.until && <span className="muted"> · vente le {new Date(r.held.until).toLocaleDateString('fr-FR')}</span>}
                         {manage && <button className="btn sm no-print" style={{ marginInlineStart: 4 }} onClick={(e) => { e.stopPropagation();
                           post(`/api/courses/${courseId}/unblock`, { date, from: r.localTime, to: r.localTime }).then(load).catch((er) => setError(er.message)); }}>Débloquer</button>}</div>}</td>
                     <td>
@@ -126,6 +129,7 @@ export function TeeSheet({ user }: { user: User }) {
                         <span key={b.id} className="chip" onClick={(e) => { e.stopPropagation(); setPanel({ kind: 'booking', id: b.id }); }}>
                           <strong>{b.customerName ?? b.reference}</strong> · {b.players} j
                           <span className="muted small">{CHANNEL_LABEL[b.channel]}</span>
+                          {b.partnerName && <span className="badge" title={b.partnerReference ? `Voucher ${b.partnerReference}` : undefined}>🧳 {b.partnerName}</span>}
                           {b.resources.length > 0 && <span className="muted small">🛒{b.resources.reduce((n, x) => n + x.quantity, 0)}</span>}
                           {b.paymentStatus && b.paymentStatus !== 'unpaid' && <PaymentBadge status={b.paymentStatus} />}
                           {b.checkinStatus === 'arrived' && <span className="badge ok">arrivé</span>}
@@ -214,6 +218,31 @@ function CustomerPicker({ clubId, value, onChange }: {
   );
 }
 
+/** Réservation pour un partenaire (tour-opérateur, agence…) : ses tarifs et ses allotements. */
+function PartnerFields({ partnerId, voucher, defaultId, onChange }: {
+  partnerId: string | null; voucher: string; defaultId: string | null;
+  onChange: (p: { id: string; priceCategory: string } | null, voucher: string) => void;
+}) {
+  const [partners, setPartners] = useState<any[]>([]);
+  useEffect(() => {
+    get('/api/partners').then((r) => {
+      const list = r.partners.filter((p: any) => p.active);
+      setPartners(list);
+      const d = list.find((p: any) => p.id === defaultId);
+      if (d) onChange(d, voucher);
+    }).catch(() => undefined);
+  }, []);
+  if (!partners.length) return null;
+  return (
+    <div className="grid2">
+      <label>Partenaire (TO, agence…)<select value={partnerId ?? ''} onChange={(e) => onChange(partners.find((p) => p.id === e.target.value) ?? null, voucher)}>
+        <option value="">— Aucun (client direct) —</option>
+        {partners.map((p) => <option key={p.id} value={p.id}>{p.name} · tarif {p.priceCategory}</option>)}</select></label>
+      {partnerId && <label>N° de voucher / dossier<input value={voucher} onChange={(e) => onChange(partners.find((p) => p.id === partnerId), e.target.value)} /></label>}
+    </div>
+  );
+}
+
 function customerPayload(c: { id?: string; lastName: string; firstName: string; phone: string; email: string }) {
   if (c.id) return { customerId: c.id };
   if (!c.lastName.trim()) return {};
@@ -238,11 +267,16 @@ function NewBookingPanel({ club, courseId, row, onSaved, onClose, onGroup }: {
   club: Club; courseId: string; row: SheetRow; onSaved: (id?: string) => void; onClose: () => void; onGroup: () => void;
 }) {
   const holesChoices = row.holes ? [row.holes] : row.allowedHoles;
-  const [players, setPlayers] = useState(Math.min(2, row.remaining));
+  const [partner, setPartner] = useState<{ id: string; priceCategory: string } | null>(null);
+  const [voucher, setVoucher] = useState('');
+  const held = !!row.held && partner?.id === row.held.partnerId;
+  const seats = held ? row.held!.remaining : row.remaining;
+  const [players, setPlayers] = useState(Math.max(1, Math.min(2, row.remaining || row.held?.remaining || 1)));
   const [holes, setHoles] = useState(holesChoices.includes(18) ? 18 : holesChoices[0]!);
   const [isPrivate, setIsPrivate] = useState(false);
   const [channel, setChannel] = useState('phone');
-  const [category, setCategory] = useState('standard');
+  const [chosenCategory, setCategory] = useState('standard');
+  const category = partner?.priceCategory ?? chosenCategory;
   const [categories, setCategories] = useState<string[]>(['standard']);
   const [caddiePayment, setCaddiePayment] = useState<'on_site' | 'with_booking'>('on_site');
   const [options, setOptions] = useState<any[]>([]);
@@ -271,6 +305,7 @@ function NewBookingPanel({ club, courseId, row, onSaved, onClose, onGroup }: {
       const r = await post('/api/bookings', {
         courseId, startsAt: row.startsAt, players, holes, isPrivate, channel, customerCategory: category, caddiePayment,
         options: optionList, notes: notes || null, ...customerPayload(customer),
+        ...(partner ? { partnerId: partner.id, partnerReference: voucher || null } : {}),
       }, { 'Idempotency-Key': crypto.randomUUID() });
       onSaved(r.booking.id);
     } catch (e) {
@@ -286,16 +321,19 @@ function NewBookingPanel({ club, courseId, row, onSaved, onClose, onGroup }: {
         <h2 style={{ margin: 0 }}>Nouvelle réservation · {row.localTime}</h2>
         <button className="btn sm" onClick={onClose}>✕</button>
       </div>
-      <div className="small muted">{row.remaining} place(s) libre(s){row.bookedPlayers > 0 && ` — départ partagé avec ${row.bookings.map((b) => b.customerName).join(', ')}`}</div>
+      <div className="small muted">{seats} place(s) libre(s){row.bookedPlayers > 0 && ` — départ partagé avec ${row.bookings.map((b) => b.customerName).join(', ')}`}</div>
+      {row.held && !held && <div className="alert">Départ tenu pour l'allotement de {row.held.partnerName} : choisir ce partenaire pour réserver.</div>}
+      <PartnerFields partnerId={partner?.id ?? null} voucher={voucher} defaultId={row.held?.partnerId ?? null}
+        onChange={(p, v) => { setPartner(p); setVoucher(v); }} />
       <div className="grid2">
         <label>Canal<select value={channel} onChange={(e) => setChannel(e.target.value)}>
           <option value="phone">Téléphone</option><option value="walk_in">Sur place</option><option value="staff">Personnel</option></select></label>
         <label>Joueurs<select value={players} onChange={(e) => setPlayers(Number(e.target.value))}>
-          {Array.from({ length: row.remaining }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}</option>)}</select></label>
+          {Array.from({ length: seats }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}</option>)}</select></label>
         <label>Formule<select value={holes} onChange={(e) => setHoles(Number(e.target.value))} disabled={holesChoices.length === 1}>
           {holesChoices.map((h) => <option key={h} value={h}>{h} trous</option>)}</select></label>
-        <label>Tarif<select value={category} onChange={(e) => setCategory(e.target.value)}>
-          {categories.map((c) => <option key={c} value={c}>{c}</option>)}</select></label>
+        <label>Tarif<select value={category} onChange={(e) => setCategory(e.target.value)} disabled={!!partner}>
+          {[...new Set([...categories, category])].map((c) => <option key={c} value={c}>{c}</option>)}</select></label>
       </div>
       {row.bookedPlayers === 0 && <label className="check"><input type="checkbox" checked={isPrivate} onChange={(e) => setIsPrivate(e.target.checked)} /> Départ privé</label>}
       <label className="check"><input type="checkbox" checked={caddiePayment === 'with_booking'} onChange={(e) => setCaddiePayment(e.target.checked ? 'with_booking' : 'on_site')} /> Caddie payé avec la réservation (sinon sur place)</label>
@@ -312,7 +350,7 @@ function NewBookingPanel({ club, courseId, row, onSaved, onClose, onGroup }: {
       <QuoteLines quote={quote} />
       <ErrorBox error={error} />
       <div className="row">
-        <button className="btn primary" disabled={busy || !quote} onClick={save}>Enregistrer</button>
+        <button className="btn primary" disabled={busy || !quote || seats < players} onClick={save}>Enregistrer</button>
         {row.bookedPlayers === 0 && <button className="btn" onClick={onGroup}>Réservation de groupe…</button>}
       </div>
     </div>
@@ -324,6 +362,8 @@ function GroupPanel({ club, courseId, row, rows, onSaved, onClose }: {
 }) {
   const [total, setTotal] = useState(8);
   const [holes, setHoles] = useState(18);
+  const [partner, setPartner] = useState<{ id: string } | null>(null);
+  const [voucher, setVoucher] = useState('');
   const [customer, setCustomer] = useState({ lastName: '', firstName: '', phone: '', email: '' } as any);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -331,7 +371,8 @@ function GroupPanel({ club, courseId, row, rows, onSaved, onClose }: {
   // Répartit le groupe par 4 sur les départs libres consécutifs à partir du créneau choisi.
   const plan = useMemo(() => {
     const start = rows.findIndex((r) => r.startsAt === row.startsAt);
-    const free = rows.slice(start).filter((r) => r.inGrid && r.bookedPlayers === 0 && r.allowedHoles.includes(holes));
+    const free = rows.slice(start).filter((r) => r.inGrid && r.bookedPlayers === 0 && r.allowedHoles.includes(holes)
+      && (!r.blockedReason || (!!partner && r.held?.partnerId === partner.id)));
     const items: Array<{ row: SheetRow; players: number }> = [];
     let left = total;
     for (const r of free) {
@@ -341,7 +382,7 @@ function GroupPanel({ club, courseId, row, rows, onSaved, onClose }: {
       left -= n;
     }
     return { items, missing: left };
-  }, [total, holes, rows, row]);
+  }, [total, holes, rows, row, partner]);
 
   async function save() {
     setBusy(true);
@@ -349,6 +390,7 @@ function GroupPanel({ club, courseId, row, rows, onSaved, onClose }: {
     try {
       await post('/api/booking-groups', {
         channel: 'group', ...customerPayload(customer),
+        ...(partner ? { partnerId: partner.id, partnerReference: voucher || null } : {}),
         items: plan.items.map((i) => ({ courseId, startsAt: i.row.startsAt, players: i.players, holes })),
       }, { 'Idempotency-Key': crypto.randomUUID() });
       onSaved();
@@ -370,6 +412,8 @@ function GroupPanel({ club, courseId, row, rows, onSaved, onClose }: {
         <label>Formule<select value={holes} onChange={(e) => setHoles(Number(e.target.value))}>
           {row.allowedHoles.map((h) => <option key={h} value={h}>{h} trous</option>)}</select></label>
       </div>
+      <PartnerFields partnerId={partner?.id ?? null} voucher={voucher} defaultId={row.held?.partnerId ?? null}
+        onChange={(p, v) => { setPartner(p); setVoucher(v); }} />
       <div className="small">
         {plan.items.map((i) => <span key={i.row.startsAt} className="chip">{i.row.localTime} · {i.players} j</span>)}
         {plan.missing > 0 && <div className="alert">Pas assez de départs libres consécutifs ({plan.missing} joueur(s) sans départ).</div>}
@@ -433,6 +477,7 @@ function BookingPanel({ id, rows, courseId, canManage, canFinance, onChanged, on
         {b.isPrivate && <span className="badge private"> Privé</span>}
         {b.status === 'cancelled' && <span className="badge warn"> Annulée</span>}
         {b.groupId && <span className="badge"> Groupe</span>}
+        {b.partner && <div className="small">🧳 <strong>{b.partner.name}</strong>{b.partner.reference && <> · voucher {b.partner.reference}</>}</div>}
       </div>
       {row?.bookings.find((x) => x.id === b.id)?.customerName && (
         <div className="small">Golfeur : <strong>{row.bookings.find((x) => x.id === b.id)!.customerName}</strong>

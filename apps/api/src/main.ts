@@ -10,6 +10,7 @@ import { createMessagingRegistry } from './integrations/messaging/registry.js';
 import { processMessagingQueue } from './modules/messaging/service.js';
 import { emailSenderFromEnv } from './integrations/email/sender.js';
 import { processEmailQueue, scheduleReminders } from './modules/notifications/service.js';
+import { releaseDueAllotments } from './modules/partners/service.js';
 import { processPosJobs } from './modules/pos-sync/service.js';
 
 const config = loadConfig();
@@ -63,6 +64,13 @@ const app = buildServer({ db, now: () => new Date(), posRegistry, ai, messaging,
     }
   }, Number(process.env.MESSAGING_WORKER_INTERVAL_MS ?? 5_000)).unref();
 }
+
+// Allotements : places non utilisées rendues à la vente à la date de release.
+setInterval(() => {
+  releaseDueAllotments(db, new Date())
+    .then((n) => n && app.log.info({ released: n }, 'Allotements : départs rendus à la vente'))
+    .catch((err) => app.log.error(err, 'Allotements'));
+}, 60_000).unref();
 
 // E-mails : rappels avant le départ et envois (toutes les 30 s).
 {

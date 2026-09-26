@@ -33,6 +33,7 @@ Chaque étape livre un logiciel fonctionnel et testé.
 | 10 | **Accueil** : arrivées / absences (frais d'absence réglables), départs bloqués (tournoi, entretien), feuille imprimable et export Excel | ✅ livré |
 | 11 | **E-mails** : confirmation, modification, annulation, rappel la veille ; fr/en/ar ; récapitulatif unique pour un groupe ; file avec reprises ; SMTP standard (voir `docs/EMAILS.md`) | ✅ livré (serveur SMTP à fournir) |
 | 12 | **Facturation et caisse** : reçus, factures aux mentions légales marocaines (ICE, IF, RC, patente) à numérotation continue, avoirs, clôture de caisse (Z) avec comptage des espèces, export comptable (voir `docs/FACTURATION.md`) | ✅ livré |
+| 13 | **Tour-opérateurs et agences** : partenaires à tarifs négociés, voucher, allotements avec release automatique, portail partenaire, relevé de compte (voir `docs/PARTENAIRES.md`) | ✅ livré |
 
 ## Suites possibles
 

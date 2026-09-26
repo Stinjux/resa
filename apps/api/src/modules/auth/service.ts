@@ -45,8 +45,10 @@ export async function logout(db: Db, token: string): Promise<void> {
 
 export async function loadPrincipal(q: Queryable, userId: string): Promise<Principal | null> {
   const { rows } = await q.query(
-    `SELECT id, organization_id AS "organizationId", display_name AS "displayName", customer_id AS "customerId"
-       FROM users WHERE id = $1 AND active`,
+    `SELECT u.id, u.organization_id AS "organizationId", u.display_name AS "displayName", u.customer_id AS "customerId",
+            u.partner_id AS "partnerId", p.name AS "partnerName"
+       FROM users u LEFT JOIN partners p ON p.id = u.partner_id
+      WHERE u.id = $1 AND u.active AND (u.partner_id IS NULL OR p.active)`,
     [userId],
   );
   if (!rows[0]) return null;
@@ -55,7 +57,7 @@ export async function loadPrincipal(q: Queryable, userId: string): Promise<Princ
     [userId],
   );
   return { userId: rows[0].id, organizationId: rows[0].organizationId, displayName: rows[0].displayName,
-    customerId: rows[0].customerId, roles: roles.rows };
+    customerId: rows[0].customerId, partnerId: rows[0].partnerId, partnerName: rows[0].partnerName, roles: roles.rows };
 }
 
 export async function principalFromToken(q: Queryable, token: string, now: Date): Promise<Principal | null> {

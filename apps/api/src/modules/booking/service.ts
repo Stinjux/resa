@@ -43,7 +43,7 @@ import { recomputeTeeTimeCharges } from '../pricing/service.js';
 import { caddieTypes, computeGrid, type GridSlot } from '../teesheet/service.js';
 import type { Payable } from '../../domain/pricing.js';
 
-export type Channel = 'web' | 'phone' | 'group' | 'walk_in' | 'staff' | 'whatsapp' | 'sms';
+export type Channel = 'web' | 'phone' | 'group' | 'walk_in' | 'staff' | 'whatsapp' | 'sms' | 'partner';
 
 export interface OptionRequest {
   resourceTypeId?: string;
@@ -80,6 +80,9 @@ export interface BookingContext {
   customerId?: string | null;
   customer?: CustomerInput | null;
   idempotencyKey?: string | null;
+  /** Réservation pour un partenaire (tour-opérateur…) : ses tarifs, ses allotements. */
+  partnerId?: string | null;
+  partnerReference?: string | null;
 }
 
 export interface BookingDeps {
@@ -138,6 +141,7 @@ export interface BookingDetail {
   groupId: string | null;
   notes: string | null;
   customerId: string | null;
+  partner: { id: string; name: string; reference: string | null } | null;
   teeTime: { id: string; courseId: string; startsAt: string; localDate: string; localTime: string };
   playerNames: Array<string | null>;
   options: Array<{ resourceTypeId: string; code: string; name: string; quantity: number }>;
@@ -171,10 +175,12 @@ export async function getBooking(q: Db | Tx, bookingId: string): Promise<Booking
             b.currency, b.total_minor AS "totalMinor", b.due_with_booking_minor AS "dueWithBookingMinor",
             b.due_on_site_minor AS "dueOnSiteMinor",
             t.id AS "teeTimeId", t.course_id AS "courseId", t.starts_at AS "startsAt",
-            t.local_date AS "localDate", c.timezone
+            t.local_date AS "localDate", c.timezone,
+            b.partner_id AS "partnerId", p.name AS "partnerName", b.partner_reference AS "partnerReference"
        FROM bookings b
        JOIN tee_times t ON t.id = b.tee_time_id
        JOIN clubs c ON c.id = b.club_id
+       LEFT JOIN partners p ON p.id = b.partner_id
       WHERE b.id = $1`,
     [bookingId],
   );
@@ -208,6 +214,7 @@ export async function getBooking(q: Db | Tx, bookingId: string): Promise<Booking
     groupId: b.groupId,
     notes: b.notes,
     customerId: b.customerId,
+    partner: b.partnerId ? { id: b.partnerId, name: b.partnerName, reference: b.partnerReference } : null,
     teeTime: {
       id: b.teeTimeId,
       courseId: b.courseId,
@@ -255,6 +262,7 @@ interface LockedTeeTime {
   holes: Holes | null;
   isPrivate: boolean;
   blockedReason: string | null;
+  heldPartnerId: string | null; // départ tenu pour l'allotement de ce partenaire
 }
 
 async function upsertTeeTime(tx: Tx, club: Club, course: Course, slot: GridSlot, localDate: string): Promise<string> {
@@ -270,8 +278,8 @@ async function upsertTeeTime(tx: Tx, club: Club, course: Course, slot: GridSlot,
   return rows[0].id;
 }
 
-function assertNotBlocked(teeTime: LockedTeeTime): void {
-  if (teeTime.blockedReason) {
+function assertNotBlocked(teeTime: LockedTeeTime, partnerId: string | null = null): void {
+  if (teeTime.blockedReason && !(partnerId && teeTime.heldPartnerId === partnerId)) {
     throw new DomainError('TEE_TIME_BLOCKED', `Départ bloqué : ${teeTime.blockedReason}`, { reason: teeTime.blockedReason });
   }
 }
@@ -279,7 +287,8 @@ function assertNotBlocked(teeTime: LockedTeeTime): void {
 async function lockTeeTimes(tx: Tx, ids: string[]): Promise<Map<string, LockedTeeTime>> {
   const { rows } = await tx.query<LockedTeeTime>(
     `SELECT id, club_id AS "clubId", course_id AS "courseId", starts_at AS "startsAt", local_date AS "localDate",
-            max_players AS "maxPlayers", holes, is_private AS "isPrivate", blocked_reason AS "blockedReason"
+            max_players AS "maxPlayers", holes, is_private AS "isPrivate", blocked_reason AS "blockedReason",
+            (SELECT a.partner_id FROM allotments a WHERE a.id = held_allotment_id) AS "heldPartnerId"
        FROM tee_times WHERE id = ANY($1) ORDER BY id FOR UPDATE`,
     [[...new Set(ids)]],
   );
@@ -530,6 +539,14 @@ async function placeBookings(
   await lockResourceTypes(tx, [...caddieRts.map((r) => r.id), ...optionsPerItem.flat().map((o) => o.rt.id)]);
 
   const customerId = await resolveCustomer(tx, theClub, ctx);
+  let partner: { id: string; priceCategory: string } | null = null;
+  if (ctx.partnerId) {
+    const { rows } = await tx.query(
+      `SELECT id, price_category AS "priceCategory" FROM partners WHERE id = $1 AND organization_id = $2 AND active`,
+      [ctx.partnerId, theClub.organizationId]);
+    if (!rows[0]) throw new DomainError('VALIDATION', 'Partenaire inconnu ou inactif.');
+    partner = rows[0];
+  }
 
   // 4. Règles + écriture, dans l'ordre de la demande.
   const bookingIds: string[] = [];
@@ -537,7 +554,7 @@ async function placeBookings(
     const teeTime = locked.get(teeTimeIds[i]!)!;
     const req = { players: r.item.players, holes: r.item.holes, isPrivate: r.item.isPrivate ?? false };
     const state = states.get(teeTime.id)!;
-    assertNotBlocked(teeTime);
+    assertNotBlocked(teeTime, partner?.id ?? null);
     assertCanJoin(state, req);
     states.set(teeTime.id, applyJoin(state, req));
     if (state.bookedPlayers === 0) {
@@ -548,8 +565,8 @@ async function placeBookings(
     const idempotencyKey = ctx.idempotencyKey ? (i === 0 ? ctx.idempotencyKey : `${ctx.idempotencyKey}#${i}`) : null;
     const { rows } = await tx.query(
       `INSERT INTO bookings (reference, club_id, tee_time_id, customer_id, channel, players, holes, is_private,
-                             group_id, notes, idempotency_key, customer_category, caddie_payment)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
+                             group_id, notes, idempotency_key, customer_category, caddie_payment, partner_id, partner_reference)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id`,
       [
         reference,
         theClub.id,
@@ -562,8 +579,11 @@ async function placeBookings(
         groupId,
         r.item.notes ?? null,
         idempotencyKey,
-        ctx.channel === 'web' ? 'standard' : (r.item.customerCategory ?? 'standard'),
+        // Partenaire : ses tarifs négociés, toujours.
+        partner ? partner.priceCategory : ctx.channel === 'web' ? 'standard' : (r.item.customerCategory ?? 'standard'),
         r.item.caddiePayment ?? theClub.defaultCaddiePayment,
+        partner?.id ?? null,
+        ctx.partnerReference?.trim() || null,
       ],
     );
     const bookingId: string = rows[0].id;
@@ -745,9 +765,10 @@ export async function moveBooking(
   opts: { actor: Actor },
 ): Promise<BookingDetail> {
   await runTx(deps.db, async (tx) => {
-    const { rows } = await tx.query('SELECT club_id FROM bookings WHERE id = $1', [bookingId]);
+    const { rows } = await tx.query('SELECT club_id, partner_id FROM bookings WHERE id = $1', [bookingId]);
     if (!rows[0]) throw new DomainError('NOT_FOUND', 'Réservation introuvable.');
     const club = await getClub(tx, rows[0].club_id);
+    const partnerId: string | null = rows[0].partner_id;
 
     let targetId: string;
     if ('teeTimeId' in target) {
@@ -773,7 +794,7 @@ export async function moveBooking(
     if (!course.allowedHoles.includes(booking.holes)) {
       throw new DomainError('HOLES_NOT_ALLOWED', `Formule ${booking.holes} trous non proposée sur ce parcours.`);
     }
-    assertNotBlocked(targetTt);
+    assertNotBlocked(targetTt, partnerId);
     const state = await occupancy(tx, targetTt);
     assertCanJoin(state, { players: booking.players, holes: booking.holes, isPrivate: booking.isPrivate });
 

@@ -41,6 +41,7 @@ const customer = z.object({
   phone: z.string().max(40).nullable().optional(),
   preferredLocale: z.string().max(10).nullable().optional(),
 });
+const partnerFields = { partnerId: z.uuid().optional(), partnerReference: z.string().max(80).nullable().optional() };
 const staffChannel = z.enum(['phone', 'group', 'walk_in', 'staff']);
 const idParam = z.object({ id: z.uuid() });
 
@@ -55,7 +56,7 @@ async function bookingContext(
   req: FastifyRequest,
   deps: AppDeps,
   club: Club,
-  body: { channel?: string; customerId?: string; customer?: z.infer<typeof customer> },
+  body: { channel?: string; customerId?: string; customer?: z.infer<typeof customer>; partnerId?: string; partnerReference?: string | null },
 ): Promise<BookingContext> {
   const actor = actorOf(req);
   const key = idempotencyKey(req.headers);
@@ -67,8 +68,10 @@ async function bookingContext(
     return {
       channel: staffChannel.parse(body.channel ?? 'phone'),
       actor, customerId: body.customerId, customer: body.customer, idempotencyKey: key,
+      partnerId: body.partnerId ?? null, partnerReference: body.partnerReference ?? null,
     };
   }
+  if (body.partnerId) throw new DomainError('FORBIDDEN', 'Réservation partenaire réservée au personnel.');
   if (body.channel && body.channel !== 'web') throw new DomainError('FORBIDDEN', 'Canal réservé au personnel.');
   const own = req.principal?.organizationId === club.organizationId ? req.principal?.customerId : null;
   if (!own && !body.customer) throw new DomainError('VALIDATION', 'Coordonnées du client requises.');
@@ -78,11 +81,11 @@ async function bookingContext(
 export function bookingRoutes(app: FastifyInstance, deps: AppDeps) {
   app.post('/api/bookings', async (req, reply) => {
     const body = item
-      .extend({ channel: z.string().optional(), customerId: z.uuid().optional(), customer: customer.optional() })
+      .extend({ channel: z.string().optional(), customerId: z.uuid().optional(), customer: customer.optional(), ...partnerFields })
       .parse(req.body);
     const club = await clubOf.course(deps, body.courseId);
     const ctx = await bookingContext(req, deps, club, body);
-    const { channel: _c, customerId: _i, customer: _cu, ...rest } = body;
+    const { channel: _c, customerId: _i, customer: _cu, partnerId: _p, partnerReference: _r, ...rest } = body;
     const result = await createBooking(deps, ctx, { ...rest, startsAt: new Date(rest.startsAt) });
     return reply.status(result.replayed ? 200 : 201).send(result);
   });
@@ -93,6 +96,7 @@ export function bookingRoutes(app: FastifyInstance, deps: AppDeps) {
         channel: staffChannel.default('group'),
         customerId: z.uuid().optional(),
         customer: customer.optional(),
+        ...partnerFields,
         items: z.array(item).min(1).max(50),
       })
       .parse(req.body);

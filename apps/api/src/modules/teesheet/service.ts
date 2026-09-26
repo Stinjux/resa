@@ -75,6 +75,9 @@ interface TeeTimeRow {
   notes: string | null;
   blockedReason: string | null;
   startedAt: Date | null;
+  heldPartnerId: string | null;
+  heldPartnerName: string | null;
+  heldUntil: Date | null;
 }
 
 interface BookingRow {
@@ -90,6 +93,8 @@ interface BookingRow {
   customerName: string | null;
   customerPhone: string | null;
   customerEmail: string | null;
+  partnerName: string | null;
+  partnerReference: string | null;
   notes: string | null;
   checkinStatus: 'expected' | 'arrived' | 'no_show';
   customerNoShows: number;
@@ -104,8 +109,10 @@ async function loadDay(q: Queryable, courseId: string, date: string) {
     await q.query<TeeTimeRow>(
       `SELECT t.id, t.starts_at AS "startsAt", t.max_players AS "maxPlayers", t.holes,
               t.is_private AS "isPrivate", t.caddie_id AS "caddieId", c.display_name AS "caddieName", t.notes,
-              t.blocked_reason AS "blockedReason", t.started_at AS "startedAt"
+              t.blocked_reason AS "blockedReason", t.started_at AS "startedAt",
+              al.partner_id AS "heldPartnerId", hp.name AS "heldPartnerName", t.held_until AS "heldUntil"
          FROM tee_times t LEFT JOIN caddies c ON c.id = t.caddie_id
+         LEFT JOIN allotments al ON al.id = t.held_allotment_id LEFT JOIN partners hp ON hp.id = al.partner_id
         WHERE t.course_id = $1 AND t.local_date = $2`,
       [courseId, date],
     )
@@ -119,13 +126,14 @@ async function loadDay(q: Queryable, courseId: string, date: string) {
                   b.customer_id AS "customerId",
                   NULLIF(concat_ws(' ', cu.first_name, cu.last_name), '') AS "customerName",
                   cu.phone AS "customerPhone", cu.email AS "customerEmail", b.notes,
+                  pa.name AS "partnerName", b.partner_reference AS "partnerReference",
                   b.checkin_status AS "checkinStatus",
                   (SELECT count(*)::int FROM bookings nb WHERE nb.customer_id = b.customer_id AND nb.checkin_status = 'no_show' AND nb.id <> b.id) AS "customerNoShows",
                   (SELECT o.total_minor FROM orders o WHERE o.booking_id = b.id) AS "orderTotalMinor",
                   (SELECT coalesce((SELECT sum(amount_minor) FROM payments WHERE order_id = o.id AND status = 'confirmed'), 0)
                         - coalesce((SELECT sum(amount_minor) FROM refunds WHERE order_id = o.id AND status = 'confirmed'), 0)
                      FROM orders o WHERE o.booking_id = b.id)::int AS "paidMinor"
-             FROM bookings b LEFT JOIN customers cu ON cu.id = b.customer_id
+             FROM bookings b LEFT JOIN customers cu ON cu.id = b.customer_id LEFT JOIN partners pa ON pa.id = b.partner_id
             WHERE b.tee_time_id = ANY($1) AND b.status = 'confirmed'
             ORDER BY b.created_at`,
           [ids],
@@ -160,6 +168,8 @@ export interface TeeSheetRow {
   allowedHoles: number[];
   isPrivate: boolean;
   blockedReason: string | null;
+  /** Départ tenu pour l'allotement d'un partenaire (places restantes pour lui). */
+  held: { partnerId: string; partnerName: string; until: string | null; remaining: number } | null;
   startedAt: string | null;
   caddie: { reserved: boolean; caddieId: string | null; name: string | null };
   bookings: Array<
@@ -193,6 +203,7 @@ export async function getTeeSheet(q: Queryable, courseId: string, date: string):
       allowedHoles: slot.allowedHoles,
       isPrivate: false,
       blockedReason: null,
+      held: null,
       startedAt: null,
       caddie: { reserved: false, caddieId: null, name: null },
       bookings: [],
@@ -231,6 +242,9 @@ export async function getTeeSheet(q: Queryable, courseId: string, date: string):
       allowedHoles: existing?.allowedHoles ?? course.allowedHoles,
       isPrivate: booked > 0 && tt.isPrivate,
       blockedReason: tt.blockedReason,
+      held: tt.heldPartnerId && tt.blockedReason
+        ? { partnerId: tt.heldPartnerId, partnerName: tt.heldPartnerName!, until: tt.heldUntil?.toISOString() ?? null, remaining: remainingSeats(state) }
+        : null,
       startedAt: tt.startedAt ? tt.startedAt.toISOString() : null,
       caddie: {
         reserved: allocations.some((a) => a.teeTimeId === tt.id && a.kind === 'caddie'),
@@ -250,6 +264,8 @@ export interface AvailableSlot {
   localTime: string;
   remaining: number;
   canBePrivate: boolean;
+  /** Places de l'allotement du partenaire qui cherche. */
+  heldForPartner?: boolean;
 }
 
 /**
@@ -259,7 +275,7 @@ export interface AvailableSlot {
  */
 export async function getAvailability(
   q: Queryable,
-  params: { courseId: string; date: string; players: number; holes: Holes; now: Date; enforceBookingWindow: boolean },
+  params: { courseId: string; date: string; players: number; holes: Holes; now: Date; enforceBookingWindow: boolean; partnerId?: string | null },
 ): Promise<{ club: Club; course: Course; slots: AvailableSlot[] }> {
   const sheet = await getTeeSheet(q, params.courseId, params.date);
   const { club, course } = sheet;
@@ -292,8 +308,10 @@ export async function getAvailability(
     if (params.enforceBookingWindow && start.getTime() > latest) continue;
     if (!row.allowedHoles.includes(params.holes)) continue;
     if (row.bookedPlayers > 0 && (row.isPrivate || row.holes !== params.holes)) continue;
-    if (row.remaining < params.players) continue;
-    if (row.blockedReason) continue;
+    const mine = !!params.partnerId && row.held?.partnerId === params.partnerId;
+    const remaining = mine ? row.held!.remaining : row.remaining;
+    if (remaining < params.players) continue;
+    if (row.blockedReason && !mine) continue;
     if (!row.caddie.reserved) {
       const ok = caddieData.every(({ rt, capacity, usages }) => {
         const p = usagePeriod(start, params.holes, course, rt.bufferMinutes);
@@ -304,8 +322,9 @@ export async function getAvailability(
     slots.push({
       startsAt: row.startsAt,
       localTime: row.localTime,
-      remaining: row.remaining,
+      remaining,
       canBePrivate: row.bookedPlayers === 0,
+      ...(mine ? { heldForPartner: true } : {}),
     });
   }
   return { club, course, slots };

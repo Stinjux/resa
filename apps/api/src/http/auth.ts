@@ -29,7 +29,7 @@ export function registerAuth(app: FastifyInstance, deps: AppDeps): void {
 export function actorOf(req: FastifyRequest): Actor {
   const p = req.principal;
   if (!p) return { type: 'customer', id: null };
-  return { type: p.roles.length > 0 ? 'user' : 'customer', id: p.userId };
+  return { type: p.roles.length > 0 || p.partnerId ? 'user' : 'customer', id: p.userId };
 }
 
 async function clubVia(deps: AppDeps, sql: string, id: string, what: string): Promise<Club> {

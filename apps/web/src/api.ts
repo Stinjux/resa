@@ -57,6 +57,8 @@ export interface User {
   userId: string;
   displayName: string;
   customerId: string | null;
+  partnerId?: string | null;
+  partnerName?: string | null;
   roles: Role[];
 }
 export interface Club {
