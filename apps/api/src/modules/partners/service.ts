@@ -15,21 +15,22 @@ import { csvMoney, toCsv } from '../../shared/csv.js';
 import { DomainError } from '../../shared/errors.js';
 import { hashPassword } from '../auth/password.js';
 import { getClub, getCourse } from '../catalog/repository.js';
+import { syncOrder } from '../orders/service.js';
 import { computeGrid } from '../teesheet/service.js';
 
 export interface PartnerInput {
   code: string; name: string; kind?: string; priceCategory?: string; onAccount?: boolean; paymentTermsDays?: number;
   contactName?: string | null; email?: string | null; phone?: string | null; legalName?: string | null; address?: string | null;
-  ice?: string | null; notes?: string | null; active?: boolean;
+  ice?: string | null; notes?: string | null; active?: boolean; billingScope?: 'all' | 'green_fees' | 'none';
 }
 
 const COLUMNS: Record<keyof PartnerInput, string> = {
   code: 'code', name: 'name', kind: 'kind', priceCategory: 'price_category', onAccount: 'on_account', paymentTermsDays: 'payment_terms_days',
   contactName: 'contact_name', email: 'email', phone: 'phone', legalName: 'legal_name', address: 'address', ice: 'ice', notes: 'notes',
-  active: 'active',
+  active: 'active', billingScope: 'billing_scope',
 };
 const SELECT = `id, organization_id AS "organizationId", code, name, kind, price_category AS "priceCategory", on_account AS "onAccount",
-  payment_terms_days AS "paymentTermsDays", contact_name AS "contactName", email, phone, legal_name AS "legalName", address, ice, notes, active`;
+  payment_terms_days AS "paymentTermsDays", billing_scope AS "billingScope", contact_name AS "contactName", email, phone, legal_name AS "legalName", address, ice, notes, active`;
 
 export async function listPartners(q: Queryable, organizationId: string, activeOnly = false) {
   const { rows } = await q.query(
@@ -69,6 +70,15 @@ export async function savePartner(db: Db, organizationId: string, id: string | n
           `INSERT INTO partners (organization_id, ${cols.join(', ')}) VALUES ($1, ${cols.map((_, i) => `$${i + 2}`).join(', ')}) RETURNING id`,
           [organizationId, ...entries.map(([, v]) => v)]);
         row = r.rows[0];
+      }
+      if (id && input.billingScope !== undefined) {
+        // Nouvelle répartition : appliquée aux réservations dont la part partenaire n'est pas encore facturée.
+        const { rows: open } = await tx.query(
+          `SELECT b.id FROM bookings b JOIN orders o ON o.booking_id = b.id
+            WHERE b.partner_id = $1 AND NOT EXISTS (SELECT 1 FROM invoice_items it JOIN invoices i ON i.id = it.invoice_id
+                    WHERE it.order_id = o.id AND i.kind = 'invoice' AND NOT EXISTS (SELECT 1 FROM invoices a WHERE a.original_id = i.id))`,
+          [id]);
+        for (const b of open) await syncOrder(tx, b.id);
       }
       await audit(tx, { clubId: null, actor, action: id ? 'partner.updated' : 'partner.created', entityType: 'partner', entityId: row.id,
         data: { fields: entries.map(([k]) => k) } });
@@ -215,10 +225,13 @@ export async function partnerBookings(q: Queryable, partnerId: string, opts: { c
     `SELECT b.id, b.reference, b.partner_reference AS "partnerReference", b.status, b.players, b.holes, b.club_id AS "clubId",
             c.name AS "clubName", co.name AS "courseName", t.starts_at AS "startsAt", c.timezone, b.checkin_status AS "checkinStatus",
             NULLIF(concat_ws(' ', cu.first_name, cu.last_name), '') AS "leadName", o.currency,
-            coalesce(o.total_minor, 0) AS "totalMinor",
-            (coalesce((SELECT sum(amount_minor) FROM payments WHERE order_id = o.id AND status = 'confirmed'), 0)
-             - coalesce((SELECT sum(amount_minor) FROM refunds WHERE order_id = o.id AND status = 'confirmed'), 0))::int AS "paidMinor",
-            (SELECT string_agg(i.number, ', ' ORDER BY i.issued_at) FROM invoices i WHERE i.booking_id = b.id AND i.kind = 'invoice'
+            -- Part du partenaire (la part du client est réglée au golf par le client).
+            (SELECT coalesce(sum(total_minor), 0)::int FROM order_lines WHERE order_id = o.id AND payer = 'partner') AS "totalMinor",
+            (SELECT coalesce(sum(total_minor), 0)::int FROM order_lines WHERE order_id = o.id AND payer = 'customer') AS "customerMinor",
+            (coalesce((SELECT sum(amount_minor) FROM payments WHERE order_id = o.id AND status = 'confirmed' AND payer = 'partner'), 0)
+             - coalesce((SELECT sum(amount_minor) FROM refunds WHERE order_id = o.id AND status = 'confirmed' AND payer = 'partner'), 0))::int AS "paidMinor",
+            (SELECT string_agg(i.number, ', ' ORDER BY i.issued_at) FROM invoice_items it JOIN invoices i ON i.id = it.invoice_id
+              WHERE it.order_id = o.id AND i.payer = 'partner' AND i.kind = 'invoice'
                 AND NOT EXISTS (SELECT 1 FROM invoices x WHERE x.original_id = i.id)) AS "invoiceNumbers"
        FROM bookings b JOIN tee_times t ON t.id = b.tee_time_id JOIN courses co ON co.id = t.course_id JOIN clubs c ON c.id = b.club_id
        LEFT JOIN customers cu ON cu.id = b.customer_id LEFT JOIN orders o ON o.booking_id = b.id
@@ -242,7 +255,7 @@ export async function partnerStatement(q: Queryable, partnerId: string, clubId: 
 
 export async function partnerStatementCsv(q: Queryable, partnerId: string, clubId: string, from: string, to: string): Promise<string> {
   const s = await partnerStatement(q, partnerId, clubId, from, to);
-  const lines: unknown[][] = [['Date', 'Heure', 'Parcours', 'Réservation', 'Voucher', 'Client', 'Joueurs', 'Trous', 'Statut', 'Montant', 'Réglé', 'Reste dû', 'Facture']];
+  const lines: unknown[][] = [['Date', 'Heure', 'Parcours', 'Réservation', 'Voucher', 'Client', 'Joueurs', 'Trous', 'Statut', 'Part partenaire', 'Réglé', 'Reste dû', 'Facture']];
   for (const b of s.bookings) {
     const at = DateTime.fromJSDate(b.startsAt, { zone: b.timezone });
     lines.push([at.toFormat('dd/MM/yyyy'), at.toFormat('HH:mm'), b.courseName, b.reference, b.partnerReference ?? '', b.leadName ?? '', b.players, b.holes,

@@ -24,6 +24,7 @@ const partnerBody = z.object({
   contactName: z.string().max(120).nullable(), email: z.email().nullable(), phone: z.string().max(40).nullable(),
   legalName: z.string().max(200).nullable(), address: z.string().max(500).nullable(), ice: z.string().max(30).nullable(),
   notes: z.string().max(2000).nullable(), active: z.boolean(),
+  billingScope: z.enum(['all', 'green_fees', 'none']),
 });
 
 /** Personnel de l'organisation ayant l'un des rôles donnés (sur au moins un golf). */

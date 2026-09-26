@@ -28,6 +28,10 @@ export function PartnersTab({ cfg, clubId, categories }: { cfg: any; clubId: str
     { key: 'priceCategory', label: 'Catégorie tarifaire (tarifs négociés)', type: 'select',
       options: [...new Set(['standard', ...categories, editing?.priceCategory].filter(Boolean))].map((c) => [c, c] as [string, string]),
       hint: 'Créer les tarifs de cette catégorie dans l’onglet Tarifs (ex. « to »)' },
+    { key: 'billingScope', label: 'Facturé au partenaire', type: 'select', options: [
+      ['green_fees', 'Green fees (le client règle caddie et matériel au golf)'], ['all', 'Tout (green fees, caddie, matériel)'],
+      ['none', 'Rien (le client paie tout, au tarif négocié)']],
+      hint: 'Le reste est payé par le client. Factures partenaire : menu Caisse → Facturation' },
     { key: 'onAccount', label: 'Règlement sur relevé (pas au comptoir)', type: 'checkbox' },
     { key: 'paymentTermsDays', label: 'Délai de paiement (jours)', type: 'number' },
     { key: 'contactName', label: 'Contact', type: 'text' },
@@ -46,7 +50,7 @@ export function PartnersTab({ cfg, clubId, categories }: { cfg: any; clubId: str
         <div className="row">
           <h2 style={{ margin: 0 }}>Partenaires</h2>
           <span className="spacer" />
-          <button className="btn sm" onClick={() => setEditing({ kind: 'tour_operator', priceCategory: 'standard', onAccount: true, paymentTermsDays: 30, active: true })}>+ Ajouter</button>
+          <button className="btn sm" onClick={() => setEditing({ kind: 'tour_operator', priceCategory: 'standard', billingScope: 'green_fees', onAccount: true, paymentTermsDays: 30, active: true })}>+ Ajouter</button>
         </div>
         <p className="small muted" style={{ margin: 0 }}>
           Communs à tous les golfs. Leurs réservations sont toujours tarifées avec leur catégorie (grille Tarifs),
@@ -61,13 +65,14 @@ export function PartnersTab({ cfg, clubId, categories }: { cfg: any; clubId: str
             }} />
         )}
         <div className="table-wrap"><table className="sheet">
-          <thead><tr><th>Partenaire</th><th>Type</th><th>Tarif</th><th>Règlement</th><th>Contact</th><th>Portail</th><th /></tr></thead>
+          <thead><tr><th>Partenaire</th><th>Type</th><th>Tarif</th><th>Facturé au partenaire</th><th>Contact</th><th>Portail</th><th /></tr></thead>
           <tbody>
             {partners.map((p) => (
               <tr key={p.id} className={p.active ? '' : 'muted'}>
                 <td><strong>{p.name}</strong> <span className="small muted">{p.code}</span>{!p.active && <span className="badge"> inactif</span>}</td>
                 <td>{KIND[p.kind]}</td><td>{p.priceCategory}</td>
-                <td className="small">{p.onAccount ? `sur relevé, ${p.paymentTermsDays} j` : 'au comptoir'}</td>
+                <td className="small">{({ all: 'tout', green_fees: 'green fees', none: 'rien' } as Record<string, string>)[p.billingScope]}
+                  {p.billingScope !== 'none' && ` · ${p.onAccount ? `sur relevé, ${p.paymentTermsDays} j` : 'au comptoir'}`}</td>
                 <td className="small">{[p.contactName, p.email, p.phone].filter(Boolean).join(' · ')}</td>
                 <td className="small">{p.portalUsers} accès</td>
                 <td className="row">
@@ -183,7 +188,7 @@ function Statement({ clubId, timezone, partners }: { clubId: string; timezone: s
   const cur = data?.bookings[0]?.currency ?? 'MAD';
   const table = data && (
     <table className="sheet doc-table">
-      <thead><tr><th>Date</th><th>Réservation</th><th>Voucher</th><th>Client</th><th>Joueurs</th><th>Statut</th><th>Montant</th><th>Réglé</th><th>Reste dû</th><th>Facture</th></tr></thead>
+      <thead><tr><th>Date</th><th>Réservation</th><th>Voucher</th><th>Client</th><th>Joueurs</th><th>Statut</th><th>Part partenaire</th><th>Réglé</th><th>Reste dû</th><th>Facture</th></tr></thead>
       <tbody>
         {data.bookings.map((b: any) => (
           <tr key={b.id}>

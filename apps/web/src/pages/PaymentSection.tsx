@@ -32,6 +32,7 @@ export function PaymentSection({ bookingId, canManage, canFinance = false, onCha
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState('cash');
   const [note, setNote] = useState('');
+  const [payer, setPayer] = useState<'customer' | 'partner'>('customer');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -39,12 +40,16 @@ export function PaymentSection({ bookingId, canManage, canFinance = false, onCha
   useEffect(() => { load(); }, [bookingId]);
   if (!order) return <ErrorBox error={error} />;
   const cur = order.currency;
+  const split = order.split.partner.totalMinor > 0;
 
   function open(m: 'pay' | 'refund') {
     setMode(m);
     setError(null);
     setNote('');
-    setAmount(String(Math.abs(m === 'pay' ? order.balanceMinor : Math.min(-order.balanceMinor || order.paidMinor, order.paidMinor)) / 100));
+    setPayer('customer');
+    // Par défaut : la part du client (celle du partenaire est réglée sur sa facture).
+    const due = order.split.partner.totalMinor > 0 ? Math.max(0, order.split.customer.balanceMinor) || order.balanceMinor : order.balanceMinor;
+    setAmount(String(Math.abs(m === 'pay' ? due : Math.min(-order.balanceMinor || order.paidMinor, order.paidMinor)) / 100));
   }
 
   async function submit() {
@@ -53,7 +58,7 @@ export function PaymentSection({ bookingId, canManage, canFinance = false, onCha
     try {
       const amountMinor = Math.round(Number(amount.replace(',', '.')) * 100);
       await post(`/api/bookings/${bookingId}/${mode === 'pay' ? 'payments' : 'refunds'}`,
-        mode === 'pay' ? { amountMinor, method, note: note || null } : { amountMinor, method, reason: note || null },
+        mode === 'pay' ? { amountMinor, method, note: note || null, payer } : { amountMinor, method, reason: note || null, payer },
         { 'Idempotency-Key': crypto.randomUUID() });
       setMode(null);
       await load();
@@ -66,8 +71,8 @@ export function PaymentSection({ bookingId, canManage, canFinance = false, onCha
   }
 
   const moves = [
-    ...order.payments.map((p: any) => ({ ...p, sign: 1, label: `Paiement · ${METHOD_LABEL[p.method] ?? p.method}` })),
-    ...order.refunds.map((r: any) => ({ ...r, sign: -1, label: `Remboursement · ${METHOD_LABEL[r.method] ?? r.method}` })),
+    ...order.payments.map((p: any) => ({ ...p, sign: 1, label: `Paiement${p.payer === 'partner' ? ' partenaire' : ''} · ${METHOD_LABEL[p.method] ?? p.method}` })),
+    ...order.refunds.map((r: any) => ({ ...r, sign: -1, label: `Remboursement${r.payer === 'partner' ? ' partenaire' : ''} · ${METHOD_LABEL[r.method] ?? r.method}` })),
   ].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
   return (
@@ -81,6 +86,10 @@ export function PaymentSection({ bookingId, canManage, canFinance = false, onCha
         <tr><td>Payé</td><td>{money(order.paidMinor, cur)}</td></tr>
         {order.pendingMinor > 0 && <tr><td className="muted">En attente de confirmation (non compté)</td><td className="muted">{money(order.pendingMinor, cur)}</td></tr>}
         <tr className="total"><td>{order.balanceMinor >= 0 ? 'Reste à payer' : 'À rembourser'}</td><td>{money(Math.abs(order.balanceMinor), cur)}</td></tr>
+        {split && <>
+          <tr><td>dont part client (au comptoir)</td><td>{money(order.split.customer.balanceMinor, cur)} <span className="small muted">/ {money(order.split.customer.totalMinor, cur)}</span></td></tr>
+          <tr><td>dont part partenaire (sur facture)</td><td>{money(order.split.partner.balanceMinor, cur)} <span className="small muted">/ {money(order.split.partner.totalMinor, cur)}</span></td></tr>
+        </>}
       </tbody></table>
       {moves.length > 0 && (
         <div className="small muted stack" style={{ gap: 2 }}>
@@ -105,6 +114,8 @@ export function PaymentSection({ bookingId, canManage, canFinance = false, onCha
             <label>Montant ({cur})<input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" /></label>
             <label>Moyen<select value={method} onChange={(e) => setMethod(e.target.value)}>
               {METHODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+            {split && <label>Payé par<select value={payer} onChange={(e) => setPayer(e.target.value as 'customer' | 'partner')}>
+              <option value="customer">Le client</option><option value="partner">Le partenaire</option></select></label>}
           </div>
           <label>{mode === 'pay' ? 'Note' : 'Motif'}<input value={note} onChange={(e) => setNote(e.target.value)} /></label>
           <ErrorBox error={error} />
@@ -116,13 +127,15 @@ export function PaymentSection({ bookingId, canManage, canFinance = false, onCha
         </div>
       )}
       {!mode && <ErrorBox error={error} />}
-      <BillingDocs bookingId={bookingId} canManage={canManage} canFinance={canFinance} totalMinor={order.totalMinor} />
+      <BillingDocs bookingId={bookingId} canManage={canManage} canFinance={canFinance} split={order.split} />
     </div>
   );
 }
 
 /** Reçu, factures et avoirs d'une réservation. */
-function BillingDocs({ bookingId, canManage, canFinance, totalMinor }: { bookingId: string; canManage: boolean; canFinance: boolean; totalMinor: number }) {
+function BillingDocs({ bookingId, canManage, canFinance, split }: {
+  bookingId: string; canManage: boolean; canFinance: boolean; split: Record<'customer' | 'partner', { totalMinor: number }>;
+}) {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [doc, setDoc] = useState<{ kind: 'invoice' | 'receipt'; data: any } | null>(null);
   const [form, setForm] = useState<{ name: string; address: string; ice: string } | null>(null);
@@ -130,7 +143,7 @@ function BillingDocs({ bookingId, canManage, canFinance, totalMinor }: { booking
   const [busy, setBusy] = useState(false);
   const load = () => get(`/api/bookings/${bookingId}/invoices`).then((r) => setInvoices(r.invoices)).catch((e) => setError(e.message));
   useEffect(() => { load(); }, [bookingId]);
-  const active = invoices.find((i) => i.kind === 'invoice' && !i.creditNoteNumber);
+  const active = (payer: string) => invoices.some((i) => i.kind === 'invoice' && i.payer === payer && !i.creditNoteNumber);
 
   async function run(fn: () => Promise<void>) {
     setBusy(true);
@@ -138,6 +151,11 @@ function BillingDocs({ bookingId, canManage, canFinance, totalMinor }: { booking
     try { await fn(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }
   const showInvoice = (id: string) => run(async () => setDoc({ kind: 'invoice', data: (await get(`/api/invoices/${id}`)).invoice }));
+  const issuePartner = () => run(async () => {
+    const r = await post(`/api/bookings/${bookingId}/invoices`, { payer: 'partner' });
+    await load();
+    setDoc({ kind: 'invoice', data: r.invoice });
+  });
   const issue = () => run(async () => {
     const r = await post(`/api/bookings/${bookingId}/invoices`, { buyer: { name: form!.name || undefined, address: form!.address || null, ice: form!.ice || null } });
     setForm(null);
@@ -155,14 +173,19 @@ function BillingDocs({ bookingId, canManage, canFinance, totalMinor }: { booking
       <div className="row">
         <strong className="small">Documents</strong>
         <button className="btn sm" disabled={busy} onClick={() => run(async () => setDoc({ kind: 'receipt', data: (await get(`/api/bookings/${bookingId}/receipt`)).receipt }))}>Reçu</button>
-        {canManage && !active && totalMinor > 0 && !form && (
-          <button className="btn sm" onClick={() => setForm({ name: '', address: '', ice: '' })}>Facturer</button>
+        {canManage && !active('customer') && split.customer.totalMinor > 0 && !form && (
+          <button className="btn sm" onClick={() => setForm({ name: '', address: '', ice: '' })}>
+            {split.partner.totalMinor > 0 ? 'Facturer le client' : 'Facturer'}</button>
+        )}
+        {canFinance && !active('partner') && split.partner.totalMinor > 0 && (
+          <button className="btn sm" disabled={busy} onClick={issuePartner} title="Seule la part du partenaire ; pour grouper plusieurs réservations : menu Caisse">
+            Facturer le partenaire</button>
         )}
       </div>
       {invoices.map((i) => (
         <div key={i.id} className="row small">
-          <button className="btn sm" onClick={() => showInvoice(i.id)}>{i.kind === 'invoice' ? 'Facture' : 'Avoir'} {i.number}</button>
-          <span>{money(i.totalMinor, i.currency)}</span>
+          <button className="btn sm" onClick={() => showInvoice(i.id)}>{i.kind === 'invoice' ? 'Facture' : 'Avoir'} {i.payer === 'partner' ? 'partenaire ' : ''}{i.number}</button>
+          <span>{money(i.amountMinor, i.currency)}{i.amountMinor !== i.totalMinor && <span className="muted"> (sur {money(i.totalMinor, i.currency)})</span>}</span>
           {i.creditNoteNumber && <span className="muted">annulée par {i.creditNoteNumber}</span>}
           {canFinance && i.kind === 'invoice' && !i.creditNoteNumber && <button className="btn sm" disabled={busy} onClick={() => credit(i.id, i.number)}>Avoir</button>}
         </div>

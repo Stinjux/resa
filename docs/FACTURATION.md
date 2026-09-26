@@ -28,11 +28,51 @@ quand le client est une entreprise).
 - Impression ou PDF : bouton **Imprimer / PDF** (« Enregistrer au format PDF »
   dans la fenêtre d'impression).
 
+## Facturation client et facturation partenaire
+
+Deux circuits séparés, chacun avec sa **propre numérotation continue** :
+
+| | Facture client | Facture partenaire |
+|---|---|---|
+| Série | `FA-G1-2026-00001` | `FP-G1-2026-00001` |
+| Contenu | une réservation, la **part du client** | une ou plusieurs réservations d'un partenaire (ex. tout le mois), la **part du partenaire** |
+| Qui l'émet | réception ou direction (panneau de la réservation) | direction : panneau de la réservation (« Facturer le partenaire ») ou **Caisse → Facturation → Tour-opérateurs** (groupée) |
+| Échéance | — | date + délai de paiement du partenaire |
+
+**Qui paie quoi** se règle par partenaire (Configuration → Partenaires →
+« Facturé au partenaire ») :
+
+- **Green fees** (par défaut) : le partenaire paie green fees, supplément
+  privé, frais d'annulation/d'absence ; le client règle caddie et matériel au golf ;
+- **Tout** : le partenaire paie tout ;
+- **Rien** : le client paie tout, au tarif négocié du partenaire.
+
+Un changement de réglage s'applique aux réservations pas encore facturées au
+partenaire.
+
+Sur chaque réservation, le panneau de règlement montre le reste dû **par
+part** (client au comptoir / partenaire sur facture). Au comptoir,
+« Encaisser » propose la part du client ; on peut aussi indiquer qu'un
+paiement vient du partenaire.
+
+**Facture partenaire groupée** : Caisse → Facturation → Tour-opérateurs →
+choisir le partenaire et la période des départs → les réservations pas encore
+facturées s'affichent (à décocher pour les facturer plus tard ou à part) →
+Émettre. Une réservation ne peut pas être facturée deux fois au partenaire.
+
+**Règlement d'une facture partenaire** (virement, chèque…) : journal des
+factures partenaires → « Règlement ». Le montant est réparti automatiquement
+sur les réservations de la facture ; il apparaît dans la caisse (clôture Z)
+et le relevé du partenaire. Règlements partiels possibles.
+
+Le journal et l'export comptable sont séparés : clients d'un côté,
+partenaires de l'autre (colonne « Facturé à » dans le CSV).
+
 ## Avoir
 
-Une facture ne se modifie ni ne se supprime : on l'annule par un **avoir**
+Une facture (client ou partenaire) ne se modifie ni ne se supprime : on l'annule par un **avoir**
 (direction uniquement, motif obligatoire), numéroté `AV-G1-2026-00001`, du
-même montant en négatif. On peut ensuite émettre une nouvelle facture.
+même montant en négatif. Les réservations concernées redeviennent facturables : on peut réémettre, par exemple regroupées autrement.
 
 ## Clôture de caisse (ticket Z)
 
@@ -60,7 +100,8 @@ période avec totaux HT / TVA / TTC et **export Excel (CSV)** pour le comptable.
 | Action | Réception | Direction / administrateur | Client |
 |---|---|---|---|
 | Reçu | ✅ | ✅ | ses réservations |
-| Émettre une facture | ✅ | ✅ | — (consulter les siennes) |
+| Facture client | ✅ | ✅ | — (consulter les siennes) |
+| Facture partenaire, règlement de facture partenaire | — | ✅ | — |
 | Émettre un avoir | — | ✅ | — |
 | Clôturer la caisse, voir les clôtures | ✅ | ✅ | — |
 | Journal et export comptable | — | ✅ | — |

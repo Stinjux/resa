@@ -11,6 +11,7 @@ import type { AppDeps } from '../server.js';
 
 const idParam = z.object({ id: z.uuid() });
 const staffMethod = z.enum(['cash', 'card_terminal', 'bank_transfer', 'other']);
+const payer = z.enum(['customer', 'partner']).optional();
 
 function idempotencyKey(headers: Record<string, unknown>): string | null {
   const v = headers['idempotency-key'];
@@ -32,7 +33,7 @@ export function orderRoutes(app: FastifyInstance, deps: AppDeps) {
   app.post('/api/bookings/:id/payments', async (req, reply) => {
     const { id } = idParam.parse(req.params);
     assertCan(req.principal, 'booking.manage', await clubOf.booking(deps, id));
-    const body = z.object({ amountMinor: z.number().int().positive(), method: staffMethod, note: z.string().max(300).nullable().optional() }).parse(req.body);
+    const body = z.object({ amountMinor: z.number().int().positive(), method: staffMethod, note: z.string().max(300).nullable().optional(), payer }).parse(req.body);
     const summary = await recordStaffPayment(deps.db, id, { ...body, idempotencyKey: idempotencyKey(req.headers) }, actorOf(req));
     return reply.status(201).send({ order: summary });
   });
@@ -42,7 +43,7 @@ export function orderRoutes(app: FastifyInstance, deps: AppDeps) {
     assertCan(req.principal, 'booking.manage', await clubOf.booking(deps, id));
     const body = z.object({
       amountMinor: z.number().int().positive(), method: staffMethod, reason: z.string().max(300).nullable().optional(),
-      paymentId: z.uuid().nullable().optional(),
+      paymentId: z.uuid().nullable().optional(), payer,
     }).parse(req.body);
     const summary = await recordStaffRefund(deps.db, id, { ...body, idempotencyKey: idempotencyKey(req.headers) }, actorOf(req));
     return reply.status(201).send({ order: summary });

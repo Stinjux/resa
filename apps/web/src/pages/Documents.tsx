@@ -77,6 +77,7 @@ export function InvoiceDoc({ invoice: i }: { invoice: any }) {
           <div className="doc-title">{credit ? 'AVOIR' : 'FACTURE'}</div>
           <div>N° <strong>{i.number}</strong></div>
           <div>Date : {dateOnly(i.issuedAt)}</div>
+          {!credit && i.dueDate && <div>Échéance : {dateOnly(`${i.dueDate}T12:00:00Z`)}</div>}
           {credit && <div>Annule la facture <strong>{i.originalNumber}</strong></div>}
         </div>
       </div>
@@ -86,7 +87,9 @@ export function InvoiceDoc({ invoice: i }: { invoice: any }) {
         {i.buyer.address && <div style={{ whiteSpace: 'pre-line' }}>{i.buyer.address}</div>}
         {i.buyer.ice && <div>ICE : {i.buyer.ice}</div>}
       </div>
-      <div className="small">Réservation {i.bookingReference}{credit && i.reason && <> · Motif : {i.reason}</>}</div>
+      <div className="small">{(i.bookingIds?.length ?? 1) > 1 ? 'Réservations' : 'Réservation'} {i.bookingReference}
+        {i.payer === 'partner' && !credit && (i.bookingIds?.length ?? 1) === 1 && ' — part prise en charge par le partenaire'}
+        {credit && i.reason && <> · Motif : {i.reason}</>}</div>
       <table className="doc-table">
         <thead><tr><th>Désignation</th><th>Qté</th><th>PU HT</th><th>TVA</th><th>Total HT</th></tr></thead>
         <tbody>
@@ -136,6 +139,10 @@ export function ReceiptDoc({ receipt: r }: { receipt: any }) {
             <td>{amount(m.amountMinor, cur)}</td></tr>
         ))}
         <tr><td>{r.order.balanceMinor >= 0 ? 'Reste à payer' : 'À rembourser'}</td><td>{amount(Math.abs(r.order.balanceMinor), cur)}</td></tr>
+        {r.order.split.partner.totalMinor > 0 && <>
+          <tr><td>dont part client</td><td>{amount(r.order.split.customer.balanceMinor, cur)}</td></tr>
+          <tr><td>dont part partenaire (facturée au partenaire)</td><td>{amount(r.order.split.partner.balanceMinor, cur)}</td></tr>
+        </>}
       </tbody></table>
       <p className="small">Ce reçu atteste des règlements enregistrés ; il ne vaut pas facture.</p>
       <LegalFooter s={r.seller} />

@@ -28,7 +28,7 @@ export function Cash({ user }: { user: User }) {
         )}
       </div>
       <CurrentCash key={clubId} clubId={clubId} />
-      {finance && <InvoiceJournal key={`j-${clubId}`} clubId={clubId} timezone={club.timezone} />}
+      {finance && <Billing key={`j-${clubId}`} clubId={clubId} timezone={club.timezone} />}
     </div>
   );
 }
@@ -136,50 +136,179 @@ function CurrentCash({ clubId }: { clubId: string }) {
   );
 }
 
-function InvoiceJournal({ clubId, timezone }: { clubId: string; timezone: string }) {
+/** Facturation : clients (une facture par réservation) et partenaires (factures groupées). */
+function Billing({ clubId, timezone }: { clubId: string; timezone: string }) {
+  const [tab, setTab] = useState<'customer' | 'partner'>('customer');
+  const [version, setVersion] = useState(0);
+  return (
+    <div className="stack">
+      <div className="card row">
+        <h3 style={{ margin: 0 }}>Facturation</h3>
+        <nav className="nav">
+          <button className={tab === 'customer' ? 'active' : ''} onClick={() => setTab('customer')}>Clients</button>
+          <button className={tab === 'partner' ? 'active' : ''} onClick={() => setTab('partner')}>Tour-opérateurs et partenaires</button>
+        </nav>
+      </div>
+      {tab === 'partner' && <PartnerInvoicing clubId={clubId} timezone={timezone} onIssued={() => setVersion((v) => v + 1)} />}
+      <InvoiceJournal key={`${tab}-${version}`} clubId={clubId} timezone={timezone} payer={tab} />
+    </div>
+  );
+}
+
+function PartnerInvoicing({ clubId, timezone, onIssued }: { clubId: string; timezone: string; onIssued: () => void }) {
+  const today = todayIn(timezone);
+  const [partners, setPartners] = useState<any[]>([]);
+  const [partnerId, setPartnerId] = useState('');
+  const [from, setFrom] = useState(`${today.slice(0, 8)}01`);
+  const [to, setTo] = useState(today);
+  const [preview, setPreview] = useState<any>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [doc, setDoc] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { get('/api/partners').then((r) => { setPartners(r.partners); if (r.partners[0]) setPartnerId(r.partners[0].id); }).catch((e) => setError(e.message)); }, []);
+  const load = () => {
+    if (!partnerId || !from || !to) return;
+    get(`/api/clubs/${clubId}/partners/${partnerId}/invoice-preview?from=${from}&to=${to}`)
+      .then((r) => { setPreview(r.preview); setSelected(new Set(r.preview.bookings.map((b: any) => b.bookingId))); })
+      .catch((e) => setError(e.message));
+  };
+  useEffect(load, [partnerId, from, to]);
+  const chosen = preview?.bookings.filter((b: any) => selected.has(b.bookingId)) ?? [];
+  const total = chosen.reduce((n: number, b: any) => n + b.partnerTotalMinor, 0);
+  const partner = partners.find((p) => p.id === partnerId);
+
+  async function issue() {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await post(`/api/clubs/${clubId}/partners/${partnerId}/invoices`, { bookingIds: chosen.map((b: any) => b.bookingId) });
+      setDoc(r.invoice);
+      load();
+      onIssued();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card stack">
+      <div className="row">
+        <h3 style={{ margin: 0 }}>Nouvelle facture partenaire</h3>
+        <span className="spacer" />
+        <select value={partnerId} onChange={(e) => setPartnerId(e.target.value)}>
+          {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+        <label className="row small">Départs du<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
+        <label className="row small">au<input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
+      </div>
+      <p className="small muted" style={{ margin: 0 }}>
+        Réservations du partenaire pas encore facturées, pour la part qu'il prend à sa charge
+        {partner && <> ({SCOPE_LABEL[partner.billingScope]})</>}. Décochez celles à facturer plus tard ou séparément.
+      </p>
+      <ErrorBox error={error} />
+      <div className="table-wrap"><table className="sheet">
+        <thead><tr><th /><th>Départ</th><th>Réservation</th><th>Voucher</th><th>Client</th><th>Joueurs</th><th>Montant</th></tr></thead>
+        <tbody>
+          {preview?.bookings.map((b: any) => (
+            <tr key={b.bookingId}>
+              <td><input type="checkbox" checked={selected.has(b.bookingId)} onChange={(e) => {
+                const next = new Set(selected);
+                if (e.target.checked) next.add(b.bookingId); else next.delete(b.bookingId);
+                setSelected(next);
+              }} /></td>
+              <td>{when(b.startsAt)}</td><td>{b.reference}{b.status === 'cancelled' && <span className="badge warn"> annulée</span>}</td>
+              <td>{b.partnerReference ?? ''}</td><td>{b.leadName ?? ''}</td><td>{b.players}</td><td>{money(b.partnerTotalMinor)}</td>
+            </tr>
+          ))}
+          {preview?.bookings.length === 0 && <tr><td colSpan={7} className="muted">Rien à facturer à ce partenaire sur la période.</td></tr>}
+        </tbody>
+      </table></div>
+      <div className="row">
+        <strong>{chosen.length} réservation(s) · {money(total)}</strong>
+        <span className="spacer" />
+        <button className="btn primary" disabled={busy || !chosen.length} onClick={issue}>Émettre la facture partenaire</button>
+      </div>
+      {doc && <DocOverlay onClose={() => setDoc(null)}><InvoiceDoc invoice={doc} /></DocOverlay>}
+    </div>
+  );
+}
+
+const SCOPE_LABEL: Record<string, string> = {
+  all: 'tout', green_fees: 'green fees ; le client règle caddie et matériel', none: 'rien : le client paie tout',
+};
+
+function InvoiceJournal({ clubId, timezone, payer }: { clubId: string; timezone: string; payer: 'customer' | 'partner' }) {
   const today = todayIn(timezone);
   const [from, setFrom] = useState(`${today.slice(0, 8)}01`);
   const [to, setTo] = useState(today);
   const [invoices, setInvoices] = useState<any[] | null>(null);
   const [doc, setDoc] = useState<any>(null);
+  const [paying, setPaying] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
-  const q = `from=${from}&to=${to}`;
-  useEffect(() => {
-    if (from && to) get(`/api/clubs/${clubId}/invoices?${q}`).then((r) => setInvoices(r.invoices)).catch((e) => setError(e.message));
-  }, [clubId, from, to]);
+  const q = `from=${from}&to=${to}&payer=${payer}`;
+  const load = () => { if (from && to) get(`/api/clubs/${clubId}/invoices?${q}`).then((r) => setInvoices(r.invoices)).catch((e) => setError(e.message)); };
+  useEffect(load, [clubId, from, to]);
   const sum = (k: string) => (invoices ?? []).reduce((n, i) => n + i[k], 0);
   const cur = invoices?.[0]?.currency ?? 'MAD';
   return (
     <div className="card stack">
       <div className="row">
-        <h3 style={{ margin: 0 }}>Journal des factures et avoirs</h3>
+        <h3 style={{ margin: 0 }}>{payer === 'partner' ? 'Factures partenaires' : 'Factures clients'} et avoirs</h3>
         <span className="spacer" />
         <label className="row small">Du<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
         <label className="row small">au<input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
-        <button className="btn sm" onClick={() => download(`/api/clubs/${clubId}/invoices.csv?${q}`, `factures-${from}-${to}.csv`).catch((e) => setError(e.message))}>
+        <button className="btn sm" onClick={() => download(`/api/clubs/${clubId}/invoices.csv?${q}`, `factures-${payer === 'partner' ? 'partenaires' : 'clients'}-${from}-${to}.csv`).catch((e) => setError(e.message))}>
           Export comptable (Excel)</button>
       </div>
       <ErrorBox error={error} />
       <div className="table-wrap"><table className="sheet">
-        <thead><tr><th>Date</th><th>Numéro</th><th>Client</th><th>Réservation</th><th>HT</th><th>TVA</th><th>TTC</th><th /></tr></thead>
+        <thead><tr><th>Date</th><th>Numéro</th><th>{payer === 'partner' ? 'Partenaire' : 'Client'}</th><th>Réservation(s)</th><th>HT</th><th>TVA</th><th>TTC</th>
+          <th>Réglé</th>{payer === 'partner' && <th>Échéance</th>}<th /></tr></thead>
         <tbody>
           {invoices?.map((i) => (
             <tr key={i.id}>
               <td>{new Date(i.issuedAt).toLocaleDateString('fr-FR')}</td>
               <td>{i.number}{i.kind === 'credit_note' && <span className="small muted"> (avoir de {i.originalNumber})</span>}
                 {i.creditNoteNumber && <span className="small muted"> (annulée)</span>}</td>
-              <td>{i.buyer.name}</td><td>{i.bookingReference}</td>
+              <td>{i.buyer.name}</td><td className="small">{i.bookingReference}</td>
               <td>{money(i.totalHtMinor, i.currency)}</td><td>{money(i.taxMinor, i.currency)}</td><td>{money(i.totalMinor, i.currency)}</td>
-              <td><button className="btn sm" onClick={() => setDoc(i)}>Voir</button></td>
+              <td>{i.kind === 'invoice' && !i.creditNoteNumber && (
+                <span className={i.settledMinor >= i.totalMinor ? 'badge ok' : 'badge warn'}>{money(i.settledMinor, i.currency)}</span>)}</td>
+              {payer === 'partner' && <td className="small">{i.kind === 'invoice' && !i.creditNoteNumber && i.dueDate}</td>}
+              <td className="row">
+                <button className="btn sm" onClick={() => setDoc(i)}>Voir</button>
+                {payer === 'partner' && i.kind === 'invoice' && !i.creditNoteNumber && i.settledMinor < i.totalMinor && (
+                  <button className="btn sm" onClick={() => setPaying({ invoice: i, amount: String((i.totalMinor - i.settledMinor) / 100), method: 'bank_transfer', note: '' })}>Règlement</button>)}
+              </td>
             </tr>
           ))}
-          {invoices?.length === 0 && <tr><td colSpan={8} className="muted">Aucune facture sur la période.</td></tr>}
+          {invoices?.length === 0 && <tr><td colSpan={10} className="muted">Aucune facture sur la période.</td></tr>}
           {!!invoices?.length && (
             <tr><td colSpan={4}><strong>Total de la période</strong></td><td><strong>{money(sum('totalHtMinor'), cur)}</strong></td>
-              <td><strong>{money(sum('taxMinor'), cur)}</strong></td><td><strong>{money(sum('totalMinor'), cur)}</strong></td><td /></tr>
+              <td><strong>{money(sum('taxMinor'), cur)}</strong></td><td><strong>{money(sum('totalMinor'), cur)}</strong></td><td colSpan={payer === 'partner' ? 3 : 2} /></tr>
           )}
         </tbody>
       </table></div>
+      {paying && (
+        <div className="card stack" style={{ background: 'var(--surface-2)' }}>
+          <strong>Règlement de la facture {paying.invoice.number} · reste {money(paying.invoice.totalMinor - paying.invoice.settledMinor, paying.invoice.currency)}</strong>
+          <div className="grid2">
+            <label>Montant<input value={paying.amount} inputMode="decimal" onChange={(e) => setPaying({ ...paying, amount: e.target.value })} /></label>
+            <label>Moyen<select value={paying.method} onChange={(e) => setPaying({ ...paying, method: e.target.value })}>
+              {['bank_transfer', 'cash', 'card_terminal', 'other'].map((m) => <option key={m} value={m}>{METHOD_LABEL[m]}</option>)}</select></label>
+          </div>
+          <label>Référence (n° de virement…)<input value={paying.note} onChange={(e) => setPaying({ ...paying, note: e.target.value })} /></label>
+          <div className="row">
+            <button className="btn primary" onClick={() => post(`/api/invoices/${paying.invoice.id}/payments`,
+              { amountMinor: toMinor(paying.amount), method: paying.method, note: paying.note || null })
+              .then(() => { setPaying(null); load(); }).catch((e) => setError(e.message))}>Enregistrer le règlement</button>
+            <button className="btn" onClick={() => setPaying(null)}>Annuler</button>
+          </div>
+          <p className="small muted" style={{ margin: 0 }}>Réparti automatiquement sur les réservations de la facture ; à valider une fois l'argent reçu.</p>
+        </div>
+      )}
       {doc && <DocOverlay onClose={() => setDoc(null)}><InvoiceDoc invoice={doc} /></DocOverlay>}
     </div>
   );

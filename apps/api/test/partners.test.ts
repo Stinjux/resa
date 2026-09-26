@@ -40,14 +40,15 @@ describe('partenaires', () => {
     const b2 = await createBooking(d, { ...staff, partnerId: f.partnerId }, { courseId: f.courseId, startsAt: at('09:00'), players: 1, holes: 18, customerCategory: 'standard' });
     expect(b2.booking.customerCategory).toBe('to');
 
-    // Facture adressée par défaut au partenaire.
+    // Facture partenaire (sa part : green fees) pour cette réservation.
     await db.query(`UPDATE clubs SET legal_name = 'Golf SARL', legal_address = 'Adresse', ice = '000000000000009' WHERE id = $1`, [f.clubId]);
-    const inv = await issueInvoice(db, b.booking.id, {}, actor);
+    const inv = await issueInvoice(db, b.booking.id, { payer: 'partner' }, actor);
     expect(inv.buyer).toEqual({ name: 'Atlas Golf Tours SARL', address: 'Marrakech', ice: '001122334000055' });
+    expect(inv.totalMinor).toBe(200_000);
 
     const s = await partnerStatement(db, f.partnerId, f.clubId, DAY, DAY);
-    expect(s.totals).toMatchObject({ players: 3, totalMinor: b.booking.pricing.totalMinor! + b2.booking.pricing.totalMinor!, paidMinor: 0 });
-    expect(s.bookings[0]).toMatchObject({ partnerReference: 'V-2030-001', leadName: 'Smith', invoiceNumbers: inv.number });
+    expect(s.totals).toMatchObject({ players: 3, totalMinor: 300_000, paidMinor: 0 });
+    expect(s.bookings[0]).toMatchObject({ partnerReference: 'V-2030-001', leadName: 'Smith', invoiceNumbers: inv.number, customerMinor: 20_000 });
   });
 
   it('allotement : départs tenus pour le partenaire, puis rendus à la vente à la date de release', async () => {

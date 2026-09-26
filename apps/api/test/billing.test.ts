@@ -58,7 +58,7 @@ describe('factures et avoirs', () => {
     const bookings = [];
     for (const t of ['08:00', '08:06', '08:12', '08:18', '08:24', '08:30']) bookings.push(await book(f, t, 1));
     // Échec (rien à facturer) : aucun numéro consommé.
-    await db.query(`UPDATE orders SET total_minor = 0 WHERE booking_id = $1`, [bookings[5]!.booking.id]);
+    await db.query(`DELETE FROM order_lines WHERE order_id = (SELECT id FROM orders WHERE booking_id = $1)`, [bookings[5]!.booking.id]);
     await expect(issueInvoice(db, bookings[5]!.booking.id, {}, actor)).rejects.toMatchObject({ code: 'VALIDATION' });
     const numbers = (await Promise.all(bookings.slice(0, 5).map((b) => issueInvoice(db, b.booking.id, {}, actor)))).map((i) => i.number).sort();
     expect(numbers).toEqual([1, 2, 3, 4, 5].map((n) => `FA-${f.code}-${year}-0000${n}`));

@@ -27,6 +27,8 @@ export interface OrderSummary {
   balanceMinor: number; // > 0 : reste dû ; < 0 : à rembourser
   pendingMinor: number; // paiements en attente de confirmation (non comptés)
   paymentStatus: PaymentStatus;
+  /** Répartition entre le client et le partenaire (tour-opérateur…). */
+  split: Record<Payer, { totalMinor: number; paidMinor: number; balanceMinor: number }>;
 }
 
 export function paymentStatusOf(totalMinor: number, paidMinor: number): PaymentStatus {
@@ -48,7 +50,17 @@ function skuOf(kind: string, holes: number, resourceCode: string | null): string
 
 interface LineSnapshot {
   kind: string; sku: string; label: string; quantity: number; unitAmountMinor: number;
-  totalMinor: number; taxRateBp: number; taxMinor: number; payable: string;
+  totalMinor: number; taxRateBp: number; taxMinor: number; payable: string; payer: Payer;
+}
+
+export type Payer = 'customer' | 'partner';
+export type BillingScope = 'all' | 'green_fees' | 'none';
+const PARTNER_GREEN_FEE_KINDS = new Set(['green_fee', 'private_surcharge', 'cancellation_fee', 'no_show_fee']);
+
+/** Qui paie une ligne : le client, ou le partenaire selon ce qu'il prend à sa charge. */
+export function payerOf(kind: string, scope: BillingScope | null): Payer {
+  if (!scope || scope === 'none') return 'customer';
+  return scope === 'all' || PARTNER_GREEN_FEE_KINDS.has(kind) ? 'partner' : 'customer';
 }
 
 /**
@@ -61,18 +73,21 @@ export async function syncOrder(tx: Tx, bookingId: string): Promise<void> {
     `SELECT b.id, b.club_id AS "clubId", b.customer_id AS "customerId", b.reference, b.status, b.holes,
             b.cancellation_fee_minor AS "cancellationFeeMinor", coalesce(b.currency, c.currency) AS currency,
             b.checkin_status AS "checkinStatus", c.no_show_fee_percent AS "noShowFeePercent",
-            c.tax_rate_bp AS "taxRateBp", c.prices_include_tax AS "pricesIncludeTax", c.pos_provider AS "posProvider"
-       FROM bookings b JOIN clubs c ON c.id = b.club_id WHERE b.id = $1`,
+            c.tax_rate_bp AS "taxRateBp", c.prices_include_tax AS "pricesIncludeTax", c.pos_provider AS "posProvider",
+            p.billing_scope AS "billingScope"
+       FROM bookings b JOIN clubs c ON c.id = b.club_id LEFT JOIN partners p ON p.id = b.partner_id WHERE b.id = $1`,
     [bookingId],
   );
   if (!b) return;
 
+  const scope: BillingScope | null = b.billingScope;
   let lines: LineSnapshot[];
   if (b.status === 'cancelled') {
     const fee = b.cancellationFeeMinor ?? 0;
     const tax = b.pricesIncludeTax ? Math.round((fee * b.taxRateBp) / (10_000 + b.taxRateBp)) : Math.round((fee * b.taxRateBp) / 10_000);
     lines = fee > 0 ? [{ kind: 'cancellation_fee', sku: 'CANCELLATION_FEE', label: "Frais d'annulation", quantity: 1,
-      unitAmountMinor: fee, totalMinor: b.pricesIncludeTax ? fee : fee + tax, taxRateBp: b.taxRateBp, taxMinor: tax, payable: 'with_booking' }] : [];
+      unitAmountMinor: fee, totalMinor: b.pricesIncludeTax ? fee : fee + tax, taxRateBp: b.taxRateBp, taxMinor: tax, payable: 'with_booking',
+      payer: payerOf('cancellation_fee', scope) }] : [];
   } else {
     const { rows } = await tx.query(
       `SELECT bc.kind, bc.label, bc.quantity, bc.unit_amount_minor AS "unitAmountMinor", bc.total_minor AS "totalMinor",
@@ -81,14 +96,15 @@ export async function syncOrder(tx: Tx, bookingId: string): Promise<void> {
         WHERE bc.booking_id = $1 ORDER BY bc.position`,
       [bookingId],
     );
-    lines = rows.map(({ resourceCode, ...l }) => ({ ...l, sku: skuOf(l.kind, b.holes, resourceCode) }));
+    lines = rows.map(({ resourceCode, ...l }) => ({ ...l, sku: skuOf(l.kind, b.holes, resourceCode), payer: payerOf(l.kind, scope) }));
     // Absence : seuls les frais d'absence restent dus si le golf n'applique pas 100 %.
     if (b.checkinStatus === 'no_show' && b.noShowFeePercent < 100) {
       const base = lines.reduce((n, l) => n + l.totalMinor, 0);
       const fee = Math.round((base * b.noShowFeePercent) / 100);
       const tax = Math.round((fee * b.taxRateBp) / (10_000 + b.taxRateBp));
       lines = fee > 0 ? [{ kind: 'no_show_fee', sku: 'NO_SHOW_FEE', label: `Frais d'absence (${b.noShowFeePercent} %)`, quantity: 1,
-        unitAmountMinor: fee, totalMinor: fee, taxRateBp: b.taxRateBp, taxMinor: tax, payable: 'with_booking' }] : [];
+        unitAmountMinor: fee, totalMinor: fee, taxRateBp: b.taxRateBp, taxMinor: tax, payable: 'with_booking',
+        payer: payerOf('no_show_fee', scope) }] : [];
     }
   }
   const status = b.status === 'cancelled' ? 'cancelled' : 'open';
@@ -110,7 +126,7 @@ export async function syncOrder(tx: Tx, bookingId: string): Promise<void> {
     orderId = existing.rows[0].id;
     const current = await tx.query(
       `SELECT kind, sku, label, quantity, unit_amount_minor AS "unitAmountMinor", total_minor AS "totalMinor",
-              tax_rate_bp AS "taxRateBp", tax_minor AS "taxMinor", payable
+              tax_rate_bp AS "taxRateBp", tax_minor AS "taxMinor", payable, payer
          FROM order_lines WHERE order_id = $1 ORDER BY position`,
       [orderId],
     );
@@ -126,9 +142,9 @@ export async function syncOrder(tx: Tx, bookingId: string): Promise<void> {
   }
   for (const [i, l] of lines.entries()) {
     await tx.query(
-      `INSERT INTO order_lines (order_id, position, kind, sku, label, quantity, unit_amount_minor, total_minor, tax_rate_bp, tax_minor, payable)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-      [orderId, i + 1, l.kind, l.sku, l.label, l.quantity, l.unitAmountMinor, l.totalMinor, l.taxRateBp, l.taxMinor, l.payable],
+      `INSERT INTO order_lines (order_id, position, kind, sku, label, quantity, unit_amount_minor, total_minor, tax_rate_bp, tax_minor, payable, payer)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      [orderId, i + 1, l.kind, l.sku, l.label, l.quantity, l.unitAmountMinor, l.totalMinor, l.taxRateBp, l.taxMinor, l.payable, l.payer],
     );
   }
   await enqueuePosJob(tx, { clubId: b.clubId, provider: b.posProvider, operation: 'upsert_sale', entityType: 'order', entityId: orderId, entityVersion: version });
@@ -143,15 +159,20 @@ export async function orderSummary(q: Queryable, orderId: string): Promise<Order
     `SELECT o.id, o.status, o.currency, o.total_minor AS total,
             coalesce((SELECT sum(amount_minor) FROM payments WHERE order_id = o.id AND status = 'confirmed'), 0)::int AS paid,
             coalesce((SELECT sum(amount_minor) FROM refunds WHERE order_id = o.id AND status = 'confirmed'), 0)::int AS refunded,
-            coalesce((SELECT sum(amount_minor) FROM payments WHERE order_id = o.id AND status = 'pending'), 0)::int AS pending
+            coalesce((SELECT sum(amount_minor) FROM payments WHERE order_id = o.id AND status = 'pending'), 0)::int AS pending,
+            coalesce((SELECT sum(total_minor) FROM order_lines WHERE order_id = o.id AND payer = 'partner'), 0)::int AS "partnerTotal",
+            (coalesce((SELECT sum(amount_minor) FROM payments WHERE order_id = o.id AND status = 'confirmed' AND payer = 'partner'), 0)
+             - coalesce((SELECT sum(amount_minor) FROM refunds WHERE order_id = o.id AND status = 'confirmed' AND payer = 'partner'), 0))::int AS "partnerPaid"
        FROM orders o WHERE o.id = $1`,
     [orderId],
   );
   if (!o) throw new DomainError('NOT_FOUND', 'Commande introuvable.');
   const paid = o.paid - o.refunded;
+  const part = (totalMinor: number, paidMinor: number) => ({ totalMinor, paidMinor, balanceMinor: totalMinor - paidMinor });
   return {
     orderId: o.id, status: o.status, currency: o.currency, totalMinor: o.total, paidMinor: paid,
     balanceMinor: o.total - paid, pendingMinor: o.pending, paymentStatus: paymentStatusOf(o.total, paid),
+    split: { customer: part(o.total - o.partnerTotal, paid - o.partnerPaid), partner: part(o.partnerTotal, o.partnerPaid) },
   };
 }
 
@@ -167,11 +188,11 @@ export async function getBookingOrder(q: Queryable, bookingId: string) {
   const [summary, lines, payments, refunds, refs] = await Promise.all([
     orderSummary(q, orderId),
     q.query(`SELECT position, kind, sku, label, quantity, unit_amount_minor AS "unitAmountMinor", total_minor AS "totalMinor",
-                    tax_minor AS "taxMinor", payable FROM order_lines WHERE order_id = $1 ORDER BY position`, [orderId]),
-    q.query(`SELECT p.id, p.amount_minor AS "amountMinor", p.method, p.status, p.source, p.note, p.created_at AS "createdAt",
+                    tax_minor AS "taxMinor", payable, payer FROM order_lines WHERE order_id = $1 ORDER BY position`, [orderId]),
+    q.query(`SELECT p.id, p.amount_minor AS "amountMinor", p.method, p.status, p.source, p.note, p.payer, p.created_at AS "createdAt",
                     p.confirmed_at AS "confirmedAt", u.display_name AS "recordedBy"
                FROM payments p LEFT JOIN users u ON u.id = p.recorded_by WHERE p.order_id = $1 ORDER BY p.created_at`, [orderId]),
-    q.query(`SELECT r.id, r.amount_minor AS "amountMinor", r.method, r.status, r.reason, r.created_at AS "createdAt",
+    q.query(`SELECT r.id, r.amount_minor AS "amountMinor", r.method, r.status, r.reason, r.payer, r.created_at AS "createdAt",
                     u.display_name AS "recordedBy"
                FROM refunds r LEFT JOIN users u ON u.id = r.recorded_by WHERE r.order_id = $1 ORDER BY r.created_at`, [orderId]),
     q.query(`SELECT provider, external_id AS "externalId", synced_at AS "syncedAt" FROM external_refs
@@ -203,7 +224,7 @@ function isUnique(err: unknown, constraint: string): boolean {
 export async function recordStaffPayment(
   db: Db,
   bookingId: string,
-  input: { amountMinor: number; method: Exclude<PaymentMethod, 'online' | 'pos'>; note?: string | null; idempotencyKey?: string | null },
+  input: { amountMinor: number; method: Exclude<PaymentMethod, 'online' | 'pos'>; note?: string | null; idempotencyKey?: string | null; payer?: Payer },
   actor: Actor,
 ): Promise<OrderSummary> {
   if (!Number.isInteger(input.amountMinor) || input.amountMinor <= 0) throw new DomainError('VALIDATION', 'Montant invalide.');
@@ -216,9 +237,10 @@ export async function recordStaffPayment(
         throw new DomainError('VALIDATION', `Montant supérieur au reste dû (${s.balanceMinor / 100} ${s.currency}).`, { balanceMinor: s.balanceMinor });
       }
       const { rows } = await tx.query(
-        `INSERT INTO payments (club_id, order_id, amount_minor, currency, method, status, source, note, idempotency_key, recorded_by, confirmed_at)
-         VALUES ($1, $2, $3, $4, $5, 'confirmed', 'staff', $6, $7, $8, now()) RETURNING id`,
-        [order.clubId, orderId, input.amountMinor, order.currency, input.method, input.note ?? null, input.idempotencyKey ?? null, actor.id ?? null],
+        `INSERT INTO payments (club_id, order_id, amount_minor, currency, method, status, source, note, idempotency_key, recorded_by, confirmed_at, payer)
+         VALUES ($1, $2, $3, $4, $5, 'confirmed', 'staff', $6, $7, $8, now(), $9) RETURNING id`,
+        [order.clubId, orderId, input.amountMinor, order.currency, input.method, input.note ?? null, input.idempotencyKey ?? null, actor.id ?? null,
+          input.payer ?? 'customer'],
       );
       await enqueuePosJob(tx, { clubId: order.clubId, provider: order.posProvider, operation: 'record_payment', entityType: 'payment', entityId: rows[0].id });
       await audit(tx, { clubId: order.clubId, actor, action: 'payment.recorded', entityType: 'booking', entityId: bookingId,
@@ -234,7 +256,7 @@ export async function recordStaffPayment(
 export async function recordStaffRefund(
   db: Db,
   bookingId: string,
-  input: { amountMinor: number; method: Exclude<PaymentMethod, 'online' | 'pos'>; reason?: string | null; paymentId?: string | null; idempotencyKey?: string | null },
+  input: { amountMinor: number; method: Exclude<PaymentMethod, 'online' | 'pos'>; reason?: string | null; paymentId?: string | null; idempotencyKey?: string | null; payer?: Payer },
   actor: Actor,
 ): Promise<OrderSummary> {
   if (!Number.isInteger(input.amountMinor) || input.amountMinor <= 0) throw new DomainError('VALIDATION', 'Montant invalide.');
@@ -251,10 +273,10 @@ export async function recordStaffRefund(
         if (!p.rowCount) throw new DomainError('VALIDATION', 'Paiement d’origine introuvable.');
       }
       const { rows } = await tx.query(
-        `INSERT INTO refunds (club_id, order_id, payment_id, amount_minor, currency, method, status, source, reason, idempotency_key, recorded_by, confirmed_at)
-         VALUES ($1, $2, $3, $4, $5, $6, 'confirmed', 'staff', $7, $8, $9, now()) RETURNING id`,
+        `INSERT INTO refunds (club_id, order_id, payment_id, amount_minor, currency, method, status, source, reason, idempotency_key, recorded_by, confirmed_at, payer)
+         VALUES ($1, $2, $3, $4, $5, $6, 'confirmed', 'staff', $7, $8, $9, now(), $10) RETURNING id`,
         [order.clubId, orderId, input.paymentId ?? null, input.amountMinor, order.currency, input.method, input.reason ?? null,
-          input.idempotencyKey ?? null, actor.id ?? null],
+          input.idempotencyKey ?? null, actor.id ?? null, input.payer ?? 'customer'],
       );
       await enqueuePosJob(tx, { clubId: order.clubId, provider: order.posProvider, operation: 'record_refund', entityType: 'refund', entityId: rows[0].id });
       await audit(tx, { clubId: order.clubId, actor, action: 'refund.recorded', entityType: 'booking', entityId: bookingId,

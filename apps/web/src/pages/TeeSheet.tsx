@@ -112,7 +112,7 @@ export function TeeSheet({ user }: { user: User }) {
                     <td className="time">{r.localTime}{!r.inGrid && <span className="badge warn"> hors grille</span>}
                       {r.startedAt && <span className="badge ok" title="Départ parti"> parti</span>}
                       {r.blockedReason && <div className="small" style={{ fontWeight: 400 }}><span className="badge warn">🔒 {r.blockedReason}</span>
-                        {r.held?.until && <span className="muted"> · vente le {new Date(r.held.until).toLocaleDateString('fr-FR')}</span>}
+                        {r.held?.until && <span className="muted"> · vente le {new Date(r.held.until).toLocaleDateString('fr-FR', { timeZone: club?.timezone })}</span>}
                         {manage && <button className="btn sm no-print" style={{ marginInlineStart: 4 }} onClick={(e) => { e.stopPropagation();
                           post(`/api/courses/${courseId}/unblock`, { date, from: r.localTime, to: r.localTime }).then(load).catch((er) => setError(er.message)); }}>Débloquer</button>}</div>}</td>
                     <td>

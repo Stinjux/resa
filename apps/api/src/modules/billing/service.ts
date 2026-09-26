@@ -16,9 +16,10 @@ import { audit, type Actor } from '../../shared/audit.js';
 import { csvMoney, toCsv } from '../../shared/csv.js';
 import { DomainError } from '../../shared/errors.js';
 import { orderSummary } from '../orders/service.js';
+import { enqueuePosJob } from '../pos-sync/enqueue.js';
 
-type SequenceKind = 'invoice' | 'credit_note' | 'cash_closing';
-const PREFIX: Record<SequenceKind, string> = { invoice: 'FA', credit_note: 'AV', cash_closing: 'Z' };
+type SequenceKind = 'invoice' | 'partner_invoice' | 'credit_note' | 'cash_closing';
+const PREFIX: Record<SequenceKind, string> = { invoice: 'FA', partner_invoice: 'FP', credit_note: 'AV', cash_closing: 'Z' };
 
 async function nextNumber(tx: Tx, club: { id: string; code: string; timezone: string }, kind: SequenceKind, at: Date): Promise<string> {
   const year = DateTime.fromJSDate(at, { zone: club.timezone }).year;
@@ -72,64 +73,200 @@ export interface Buyer { name: string; address?: string | null; ice?: string | n
 
 // ---------------------------------------------------------------------------
 // Factures
+//
+// Deux circuits, chacun avec sa numérotation continue :
+// - facture client (FA) : une réservation, la part payée par le client ;
+// - facture partenaire (FP) : une ou plusieurs réservations d'un partenaire,
+//   la part qu'il prend à sa charge (réglage « facturation » du partenaire).
+// Une même part n'est jamais facturée deux fois tant que sa facture n'est pas
+// annulée par un avoir.
 
-export async function issueInvoice(db: Db, bookingId: string, input: { buyer?: Partial<Buyer> | null }, actor: Actor) {
+export type Payer = 'customer' | 'partner';
+
+interface Item { orderId: string; bookingId: string; lines: InvoiceLine[]; totalMinor: number; taxMinor: number; paidMinor: number }
+
+/** Lignes de la part d'un payeur pour une commande (verrouillée par l'appelant). */
+async function orderPart(tx: Tx, orderId: string, payer: Payer, prefix = ''): Promise<Omit<Item, 'orderId' | 'bookingId'>> {
+  const { rows } = await tx.query(
+    `SELECT label, quantity, total_minor AS "totalMinor", tax_rate_bp AS "taxRateBp", tax_minor AS "taxMinor"
+       FROM order_lines WHERE order_id = $1 AND payer = $2 ORDER BY position`,
+    [orderId, payer],
+  );
+  const lines: InvoiceLine[] = rows.map((l) => {
+    const ht = l.totalMinor - l.taxMinor;
+    return { label: prefix + l.label, quantity: l.quantity, unitHtMinor: Math.round(ht / l.quantity), totalHtMinor: ht,
+      taxRateBp: l.taxRateBp, taxMinor: l.taxMinor, totalMinor: l.totalMinor };
+  });
+  const totalMinor = lines.reduce((n, l) => n + l.totalMinor, 0);
+  const split = (await orderSummary(tx, orderId)).split[payer];
+  return { lines, totalMinor, taxMinor: lines.reduce((n, l) => n + l.taxMinor, 0), paidMinor: Math.max(0, Math.min(split.paidMinor, totalMinor)) };
+}
+
+/** Facture active (non annulée) couvrant déjà la part de ce payeur. */
+async function activeInvoiceFor(q: Queryable, orderId: string, payer: Payer): Promise<string | null> {
+  const { rows } = await q.query(
+    `SELECT i.number FROM invoice_items it JOIN invoices i ON i.id = it.invoice_id
+      WHERE it.order_id = $1 AND i.payer = $2 AND i.kind = 'invoice' AND NOT EXISTS (SELECT 1 FROM invoices a WHERE a.original_id = i.id)`,
+    [orderId, payer],
+  );
+  return rows[0]?.number ?? null;
+}
+
+async function insertInvoice(tx: Tx, club: ClubBilling, input: {
+  payer: Payer; partnerId: string | null; buyer: Buyer; currency: string; items: Item[]; dueDate: string | null; actor: Actor;
+}): Promise<string> {
+  const now = new Date();
+  const number = await nextNumber(tx, club, input.payer === 'partner' ? 'partner_invoice' : 'invoice', now);
+  const lines = input.items.flatMap((i) => i.lines);
+  const total = input.items.reduce((n, i) => n + i.totalMinor, 0);
+  const tax = input.items.reduce((n, i) => n + i.taxMinor, 0);
+  const single = input.items.length === 1 ? input.items[0]! : null;
+  const { rows } = await tx.query(
+    `INSERT INTO invoices (club_id, order_id, booking_id, kind, number, issued_at, issued_by, seller, buyer, currency, lines,
+                           total_ht_minor, tax_minor, total_minor, paid_minor, payer, partner_id, due_date)
+     VALUES ($1, $2, $3, 'invoice', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING id`,
+    [club.id, single?.orderId ?? null, single?.bookingId ?? null, number, now, input.actor.id ?? null, sellerOf(club), input.buyer, input.currency,
+      JSON.stringify(lines), total - tax, tax, total, input.items.reduce((n, i) => n + i.paidMinor, 0), input.payer, input.partnerId, input.dueDate],
+  );
+  for (const i of input.items) {
+    await tx.query('INSERT INTO invoice_items (invoice_id, order_id, booking_id, amount_minor) VALUES ($1, $2, $3, $4)',
+      [rows[0].id, i.orderId, i.bookingId, i.totalMinor]);
+  }
+  await audit(tx, { clubId: club.id, actor: input.actor, action: 'invoice.issued', entityType: 'invoice', entityId: rows[0].id,
+    data: { number, payer: input.payer, partnerId: input.partnerId, bookings: input.items.map((i) => i.bookingId), totalMinor: total } });
+  return rows[0].id as string;
+}
+
+/** Facture client d'une réservation : la part payée par le client. */
+export async function issueInvoice(db: Db, bookingId: string, input: { buyer?: Partial<Buyer> | null; payer?: Payer }, actor: Actor) {
+  if (input.payer === 'partner') {
+    const { rows } = await db.query('SELECT club_id, partner_id FROM bookings WHERE id = $1', [bookingId]);
+    if (!rows[0]?.partner_id) throw new DomainError('VALIDATION', 'Réservation sans partenaire.');
+    return issuePartnerInvoice(db, rows[0].club_id, rows[0].partner_id, { bookingIds: [bookingId] }, actor);
+  }
   const id = await withTransaction(db, async (tx) => {
     const { rows: [o] } = await tx.query(
-      `SELECT o.id, o.club_id AS "clubId", o.currency, o.total_minor AS total, o.tax_minor AS tax,
-              nullif(trim(coalesce(cu.first_name, '') || ' ' || coalesce(cu.last_name, '')), '') AS "customerName",
-              coalesce(p.legal_name, p.name) AS "partnerName", p.address AS "partnerAddress", p.ice AS "partnerIce"
-         FROM orders o JOIN bookings b ON b.id = o.booking_id LEFT JOIN customers cu ON cu.id = o.customer_id
-         LEFT JOIN partners p ON p.id = b.partner_id
-        WHERE o.booking_id = $1 FOR UPDATE OF o`,
+      `SELECT o.id, o.club_id AS "clubId", o.currency,
+              nullif(trim(coalesce(cu.first_name, '') || ' ' || coalesce(cu.last_name, '')), '') AS "customerName"
+         FROM orders o LEFT JOIN customers cu ON cu.id = o.customer_id WHERE o.booking_id = $1 FOR UPDATE OF o`,
       [bookingId],
     );
     if (!o) throw new DomainError('NOT_FOUND', 'Commande introuvable pour cette réservation.');
     const club = await clubBilling(tx, o.clubId);
     assertLegalInfo(club);
-    if (o.total <= 0) throw new DomainError('VALIDATION', 'Rien à facturer pour cette réservation.');
-    const active = await tx.query(
-      `SELECT i.number FROM invoices i WHERE i.order_id = $1 AND i.kind = 'invoice'
-          AND NOT EXISTS (SELECT 1 FROM invoices a WHERE a.original_id = i.id)`,
-      [o.id],
-    );
-    if (active.rows[0]) {
-      throw new DomainError('INVOICE_EXISTS', `Facture ${active.rows[0].number} déjà émise : émettre un avoir pour la corriger.`);
-    }
-    const { rows: orderLines } = await tx.query(
-      `SELECT label, quantity, total_minor AS "totalMinor", tax_rate_bp AS "taxRateBp", tax_minor AS "taxMinor"
-         FROM order_lines WHERE order_id = $1 ORDER BY position`,
-      [o.id],
-    );
-    const lines: InvoiceLine[] = orderLines.map((l) => {
-      const ht = l.totalMinor - l.taxMinor;
-      return { label: l.label, quantity: l.quantity, unitHtMinor: Math.round(ht / l.quantity), totalHtMinor: ht,
-        taxRateBp: l.taxRateBp, taxMinor: l.taxMinor, totalMinor: l.totalMinor };
-    });
-    // Réservation d'un partenaire : facturée par défaut au partenaire.
-    const name = input.buyer?.name?.trim() || o.partnerName || o.customerName;
+    const existing = await activeInvoiceFor(tx, o.id, 'customer');
+    if (existing) throw new DomainError('INVOICE_EXISTS', `Facture ${existing} déjà émise : émettre un avoir pour la corriger.`);
+    const part = await orderPart(tx, o.id, 'customer');
+    if (part.totalMinor <= 0) throw new DomainError('VALIDATION', 'Rien à facturer au client pour cette réservation.');
+    const name = input.buyer?.name?.trim() || o.customerName;
     if (!name) throw new DomainError('VALIDATION', 'Nom du client à indiquer sur la facture.');
-    const byPartner = !input.buyer?.name?.trim() && !!o.partnerName;
-    const buyer: Buyer = { name, address: input.buyer?.address?.trim() || (byPartner ? o.partnerAddress : null),
-      ice: input.buyer?.ice?.trim() || (byPartner ? o.partnerIce : null) };
-    const now = new Date();
-    const number = await nextNumber(tx, club, 'invoice', now);
-    const paid = (await orderSummary(tx, o.id)).paidMinor;
-    const { rows } = await tx.query(
-      `INSERT INTO invoices (club_id, order_id, booking_id, kind, number, issued_at, issued_by, seller, buyer, currency, lines,
-                             total_ht_minor, tax_minor, total_minor, paid_minor)
-       VALUES ($1, $2, $3, 'invoice', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id`,
-      [club.id, o.id, bookingId, number, now, actor.id ?? null, sellerOf(club), buyer, o.currency, JSON.stringify(lines),
-        o.total - o.tax, o.tax, o.total, Math.max(0, Math.min(paid, o.total))],
-    );
-    await audit(tx, { clubId: club.id, actor, action: 'invoice.issued', entityType: 'invoice', entityId: rows[0].id,
-      data: { number, bookingId, totalMinor: o.total } });
-    return rows[0].id as string;
+    return insertInvoice(tx, club, { payer: 'customer', partnerId: null, currency: o.currency, dueDate: null, actor,
+      buyer: { name, address: input.buyer?.address?.trim() || null, ice: input.buyer?.ice?.trim() || null },
+      items: [{ orderId: o.id, bookingId, ...part }] });
   });
   return getInvoice(db, id);
 }
 
-/** Avoir : annule entièrement une facture (montants négatifs). */
+export interface PartnerSelection { from?: string; to?: string; bookingIds?: string[] }
+
+/** Réservations d'un partenaire dont la part partenaire reste à facturer. */
+async function partnerUninvoiced(q: Queryable, clubId: string, partnerId: string, sel: PartnerSelection) {
+  if (!sel.bookingIds?.length && !(sel.from && sel.to)) throw new DomainError('VALIDATION', 'Période ou réservations à facturer.');
+  const { rows } = await q.query(
+    `SELECT b.id AS "bookingId", o.id AS "orderId", b.reference, b.partner_reference AS "partnerReference", b.status, b.players,
+            t.starts_at AS "startsAt", c.timezone,
+            NULLIF(concat_ws(' ', cu.first_name, cu.last_name), '') AS "leadName",
+            (SELECT coalesce(sum(total_minor), 0)::int FROM order_lines WHERE order_id = o.id AND payer = 'partner') AS "partnerTotalMinor"
+       FROM bookings b JOIN orders o ON o.booking_id = b.id JOIN tee_times t ON t.id = b.tee_time_id JOIN clubs c ON c.id = b.club_id
+       LEFT JOIN customers cu ON cu.id = b.customer_id
+      WHERE b.club_id = $1 AND b.partner_id = $2
+        AND ($3::uuid[] IS NULL OR b.id = ANY($3)) AND ($4::date IS NULL OR t.local_date >= $4) AND ($5::date IS NULL OR t.local_date <= $5)
+        AND NOT EXISTS (SELECT 1 FROM invoice_items it JOIN invoices i ON i.id = it.invoice_id
+                         WHERE it.order_id = o.id AND i.payer = 'partner' AND i.kind = 'invoice'
+                           AND NOT EXISTS (SELECT 1 FROM invoices a WHERE a.original_id = i.id))
+      ORDER BY t.starts_at, b.reference`,
+    [clubId, partnerId, sel.bookingIds?.length ? sel.bookingIds : null, sel.from ?? null, sel.to ?? null],
+  );
+  return rows.filter((r) => r.partnerTotalMinor > 0);
+}
+
+/** Aperçu avant émission d'une facture partenaire. */
+export async function previewPartnerInvoice(q: Queryable, clubId: string, partnerId: string, sel: PartnerSelection) {
+  const bookings = await partnerUninvoiced(q, clubId, partnerId, sel);
+  return { bookings, totalMinor: bookings.reduce((n, b) => n + b.partnerTotalMinor, 0) };
+}
+
+/** Facture partenaire : sa part sur une ou plusieurs réservations (ex. tout le mois). */
+export async function issuePartnerInvoice(db: Db, clubId: string, partnerId: string, sel: PartnerSelection, actor: Actor) {
+  const id = await withTransaction(db, async (tx) => {
+    const club = await clubBilling(tx, clubId);
+    assertLegalInfo(club);
+    const { rows: [p] } = await tx.query(
+      `SELECT id, name, legal_name AS "legalName", address, ice, payment_terms_days AS "terms", organization_id AS "orgId"
+         FROM partners WHERE id = $1 FOR UPDATE`, [partnerId]);
+    const { rows: [c] } = await tx.query('SELECT organization_id AS "orgId" FROM clubs WHERE id = $1', [clubId]);
+    if (!p || p.orgId !== c.orgId) throw new DomainError('NOT_FOUND', 'Partenaire introuvable.');
+    // Verrou partenaire (ci-dessus) : deux factures simultanées ne prennent pas les mêmes réservations.
+    const bookings = await partnerUninvoiced(tx, clubId, partnerId, sel);
+    if (!bookings.length) throw new DomainError('VALIDATION', 'Aucune réservation à facturer à ce partenaire sur cette sélection.');
+    if (sel.bookingIds?.length && bookings.length !== new Set(sel.bookingIds).size) {
+      throw new DomainError('INVOICE_EXISTS', 'Une des réservations est déjà facturée au partenaire ou n’a rien à lui facturer.');
+    }
+    const items: Item[] = [];
+    for (const b of bookings) {
+      await tx.query('SELECT 1 FROM orders WHERE id = $1 FOR UPDATE', [b.orderId]);
+      const when = DateTime.fromJSDate(b.startsAt, { zone: b.timezone }).toFormat('dd/MM HH:mm');
+      const prefix = `${b.reference} · ${when}${b.partnerReference ? ` · ${b.partnerReference}` : ''}${b.leadName ? ` · ${b.leadName}` : ''} — `;
+      items.push({ orderId: b.orderId, bookingId: b.bookingId, ...(await orderPart(tx, b.orderId, 'partner', prefix)) });
+    }
+    const today = DateTime.now().setZone(club.timezone);
+    return insertInvoice(tx, club, { payer: 'partner', partnerId, currency: club.currency, actor, items,
+      dueDate: today.plus({ days: p.terms }).toISODate(),
+      buyer: { name: p.legalName ?? p.name, address: p.address, ice: p.ice } });
+  });
+  return getInvoice(db, id);
+}
+
+/**
+ * Règlement d'une facture partenaire (virement du mois…) : réparti sur les
+ * réservations de la facture, dans l'ordre, à hauteur de la part partenaire
+ * restant due. Chaque part devient un paiement confirmé (caisse, POS).
+ */
+export async function recordInvoicePayment(
+  db: Db, invoiceId: string, input: { amountMinor: number; method: 'cash' | 'card_terminal' | 'bank_transfer' | 'other'; note?: string | null }, actor: Actor,
+) {
+  if (!Number.isInteger(input.amountMinor) || input.amountMinor <= 0) throw new DomainError('VALIDATION', 'Montant invalide.');
+  await withTransaction(db, async (tx) => {
+    const { rows: [inv] } = await tx.query(`SELECT id, club_id, number, payer, kind FROM invoices WHERE id = $1 FOR UPDATE`, [invoiceId]);
+    if (!inv) throw new DomainError('NOT_FOUND', 'Facture introuvable.');
+    if (inv.kind !== 'invoice' || inv.payer !== 'partner') throw new DomainError('VALIDATION', 'Règlement groupé réservé aux factures partenaire.');
+    const { rows: items } = await tx.query(
+      `SELECT it.order_id AS "orderId", it.booking_id AS "bookingId", o.currency, c.pos_provider AS "posProvider"
+         FROM invoice_items it JOIN orders o ON o.id = it.order_id JOIN clubs c ON c.id = o.club_id
+        WHERE it.invoice_id = $1 ORDER BY it.booking_id FOR UPDATE OF o`, [invoiceId]);
+    const dues = await Promise.all(items.map(async (i) => ({ ...i, due: Math.max(0, (await orderSummary(tx, i.orderId)).split.partner.balanceMinor) })));
+    const totalDue = dues.reduce((n, d) => n + d.due, 0);
+    if (input.amountMinor > totalDue) throw new DomainError('VALIDATION', `Montant supérieur au reste dû sur la facture (${totalDue / 100}).`, { dueMinor: totalDue });
+    let left = input.amountMinor;
+    for (const d of dues) {
+      if (left <= 0) break;
+      const amount = Math.min(left, d.due);
+      if (amount <= 0) continue;
+      left -= amount;
+      const { rows } = await tx.query(
+        `INSERT INTO payments (club_id, order_id, amount_minor, currency, method, status, source, note, recorded_by, confirmed_at, payer)
+         VALUES ($1, $2, $3, $4, $5, 'confirmed', 'staff', $6, $7, now(), 'partner') RETURNING id`,
+        [inv.club_id, d.orderId, amount, d.currency, input.method, `Règlement facture ${inv.number}${input.note ? ` — ${input.note}` : ''}`, actor.id ?? null],
+      );
+      await enqueuePosJob(tx, { clubId: inv.club_id, provider: d.posProvider, operation: 'record_payment', entityType: 'payment', entityId: rows[0].id });
+    }
+    await audit(tx, { clubId: inv.club_id, actor, action: 'invoice.payment_recorded', entityType: 'invoice', entityId: invoiceId,
+      data: { amountMinor: input.amountMinor, method: input.method } });
+  });
+  return getInvoice(db, invoiceId);
+}
+
+/** Avoir : annule entièrement une facture (montants négatifs) ; les réservations redeviennent facturables. */
 export async function issueCreditNote(db: Db, invoiceId: string, reason: string, actor: Actor) {
   if (!reason.trim()) throw new DomainError('VALIDATION', "Motif de l'avoir obligatoire.");
   const id = await withTransaction(db, async (tx) => {
@@ -144,11 +281,14 @@ export async function issueCreditNote(db: Db, invoiceId: string, reason: string,
     const lines = (inv.lines as InvoiceLine[]).map((l) => ({ ...l, quantity: -l.quantity, totalHtMinor: -l.totalHtMinor, taxMinor: -l.taxMinor, totalMinor: -l.totalMinor }));
     const { rows } = await tx.query(
       `INSERT INTO invoices (club_id, order_id, booking_id, kind, number, original_id, issued_at, issued_by, seller, buyer, currency, lines,
-                             total_ht_minor, tax_minor, total_minor, paid_minor, reason)
-       VALUES ($1, $2, $3, 'credit_note', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 0, $15) RETURNING id`,
+                             total_ht_minor, tax_minor, total_minor, paid_minor, reason, payer, partner_id)
+       VALUES ($1, $2, $3, 'credit_note', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 0, $15, $16, $17) RETURNING id`,
       [inv.club_id, inv.order_id, inv.booking_id, number, inv.id, now, actor.id ?? null, sellerOf(club), inv.buyer, inv.currency,
-        JSON.stringify(lines), -inv.total_ht_minor, -inv.tax_minor, -inv.total_minor, reason.trim()],
+        JSON.stringify(lines), -inv.total_ht_minor, -inv.tax_minor, -inv.total_minor, reason.trim(), inv.payer, inv.partner_id],
     );
+    await tx.query(
+      `INSERT INTO invoice_items (invoice_id, order_id, booking_id, amount_minor)
+       SELECT $1, order_id, booking_id, -amount_minor FROM invoice_items WHERE invoice_id = $2`, [rows[0].id, inv.id]);
     await audit(tx, { clubId: inv.club_id, actor, action: 'credit_note.issued', entityType: 'invoice', entityId: rows[0].id,
       data: { number, originalNumber: inv.number, totalMinor: -inv.total_minor } });
     return rows[0].id as string;
@@ -158,9 +298,17 @@ export async function issueCreditNote(db: Db, invoiceId: string, reason: string,
 
 const INVOICE_COLUMNS = `i.id, i.club_id AS "clubId", i.booking_id AS "bookingId", i.kind, i.number, i.issued_at AS "issuedAt",
   i.seller, i.buyer, i.currency, i.lines, i.total_ht_minor AS "totalHtMinor", i.tax_minor AS "taxMinor", i.total_minor AS "totalMinor",
-  i.paid_minor AS "paidMinor", i.reason, b.reference AS "bookingReference", u.display_name AS "issuedBy",
-  o.number AS "originalNumber", cn.number AS "creditNoteNumber"`;
-const INVOICE_FROM = `invoices i JOIN bookings b ON b.id = i.booking_id LEFT JOIN users u ON u.id = i.issued_by
+  i.paid_minor AS "paidMinor", i.reason, i.payer, i.partner_id AS "partnerId", to_char(i.due_date, 'YYYY-MM-DD') AS "dueDate",
+  u.display_name AS "issuedBy", o.number AS "originalNumber", cn.number AS "creditNoteNumber",
+  (SELECT string_agg(b.reference, ', ' ORDER BY b.reference) FROM invoice_items it JOIN bookings b ON b.id = it.booking_id
+    WHERE it.invoice_id = i.id) AS "bookingReference",
+  (SELECT array_agg(it.booking_id) FROM invoice_items it WHERE it.invoice_id = i.id) AS "bookingIds",
+  -- Réglé à ce jour sur la part facturée (paiements confirmés du payeur, plafonnés à chaque part).
+  (SELECT coalesce(sum(least(greatest(it.amount_minor, 0), greatest(0,
+      coalesce((SELECT sum(p.amount_minor) FROM payments p WHERE p.order_id = it.order_id AND p.status = 'confirmed' AND p.payer = i.payer), 0)
+    - coalesce((SELECT sum(r.amount_minor) FROM refunds r WHERE r.order_id = it.order_id AND r.status = 'confirmed' AND r.payer = i.payer), 0)))), 0)::int
+     FROM invoice_items it WHERE it.invoice_id = i.id) AS "settledMinor"`;
+const INVOICE_FROM = `invoices i LEFT JOIN users u ON u.id = i.issued_by
   LEFT JOIN invoices o ON o.id = i.original_id LEFT JOIN invoices cn ON cn.original_id = i.id`;
 
 export async function getInvoice(q: Queryable, id: string) {
@@ -171,29 +319,34 @@ export async function getInvoice(q: Queryable, id: string) {
 
 export async function bookingInvoices(q: Queryable, bookingId: string) {
   const { rows } = await q.query(
-    `SELECT i.id, i.kind, i.number, i.issued_at AS "issuedAt", i.total_minor AS "totalMinor", i.currency, cn.number AS "creditNoteNumber"
-       FROM invoices i LEFT JOIN invoices cn ON cn.original_id = i.id WHERE i.booking_id = $1 ORDER BY i.issued_at`,
+    `SELECT i.id, i.kind, i.number, i.payer, i.issued_at AS "issuedAt", it.amount_minor AS "amountMinor", i.total_minor AS "totalMinor", i.currency,
+            cn.number AS "creditNoteNumber"
+       FROM invoice_items it JOIN invoices i ON i.id = it.invoice_id LEFT JOIN invoices cn ON cn.original_id = i.id
+      WHERE it.booking_id = $1 ORDER BY i.issued_at`,
     [bookingId],
   );
   return rows;
 }
 
-export async function listInvoices(q: Queryable, clubId: string, from: Date, to: Date) {
+export async function listInvoices(q: Queryable, clubId: string, from: Date, to: Date, opts: { payer?: Payer; partnerId?: string } = {}) {
   const { rows } = await q.query(
-    `SELECT ${INVOICE_COLUMNS} FROM ${INVOICE_FROM} WHERE i.club_id = $1 AND i.issued_at >= $2 AND i.issued_at < $3 ORDER BY i.issued_at, i.number`,
-    [clubId, from, to],
+    `SELECT ${INVOICE_COLUMNS} FROM ${INVOICE_FROM}
+      WHERE i.club_id = $1 AND i.issued_at >= $2 AND i.issued_at < $3 AND ($4::text IS NULL OR i.payer = $4) AND ($5::uuid IS NULL OR i.partner_id = $5)
+      ORDER BY i.issued_at, i.number`,
+    [clubId, from, to, opts.payer ?? null, opts.partnerId ?? null],
   );
   return rows;
 }
 
 /** Journal des factures et avoirs pour le comptable. */
-export async function invoicesCsv(q: Queryable, clubId: string, from: Date, to: Date, timezone: string): Promise<string> {
-  const rows = await listInvoices(q, clubId, from, to);
-  const lines: unknown[][] = [['Date', 'Numéro', 'Type', 'Facture annulée', 'Client', 'ICE client', 'Réservation', 'Total HT', 'TVA', 'Total TTC', 'Devise']];
+export async function invoicesCsv(q: Queryable, clubId: string, from: Date, to: Date, timezone: string, opts: { payer?: Payer } = {}): Promise<string> {
+  const rows = await listInvoices(q, clubId, from, to, opts);
+  const lines: unknown[][] = [['Date', 'Numéro', 'Type', 'Facturé à', 'Facture annulée', 'Client', 'ICE client', 'Réservations', 'Échéance',
+    'Total HT', 'TVA', 'Total TTC', 'Réglé', 'Devise']];
   for (const r of rows) {
     lines.push([DateTime.fromJSDate(r.issuedAt, { zone: timezone }).toFormat('dd/MM/yyyy'), r.number, r.kind === 'invoice' ? 'Facture' : 'Avoir',
-      r.originalNumber ?? '', r.buyer.name, r.buyer.ice ?? '', r.bookingReference, csvMoney(r.totalHtMinor), csvMoney(r.taxMinor),
-      csvMoney(r.totalMinor), r.currency]);
+      r.payer === 'partner' ? 'Partenaire' : 'Client', r.originalNumber ?? '', r.buyer.name, r.buyer.ice ?? '', r.bookingReference ?? '', r.dueDate ?? '',
+      csvMoney(r.totalHtMinor), csvMoney(r.taxMinor), csvMoney(r.totalMinor), r.kind === 'invoice' ? csvMoney(r.settledMinor) : '', r.currency]);
   }
   return toCsv(lines);
 }

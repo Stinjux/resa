@@ -61,12 +61,12 @@ de la période (date de départ), voucher, client, statut (confirmée, annulée,
 absent), montant, réglé, reste dû, factures émises ; total ; impression / PDF
 et export Excel.
 
-Les réservations d'un partenaire se facturent une par une (facture adressée
-au partenaire par défaut, voir `docs/FACTURATION.md`).
+Le relevé porte sur la **part du partenaire**. Sa facturation (factures
+groupées, série `FP`, règlements) et la répartition client / partenaire sont
+décrites dans `docs/FACTURATION.md`.
 
 ## À décider plus tard (selon vos contrats)
 
-- Facture mensuelle unique regroupant toutes les réservations du mois.
 - Commissions (agences payées à la commission plutôt qu'au tarif net).
 - Allotement exprimé en nombre de joueurs plutôt qu'en départs entiers.
 - Envoi automatique du relevé par e-mail.
