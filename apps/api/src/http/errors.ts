@@ -15,6 +15,14 @@ const STATUS: Record<DomainErrorCode, number> = {
   CADDIE_UNAVAILABLE: 409,
   RESOURCE_UNAVAILABLE: 409,
   BOOKING_CANCELLED: 409,
+  PRICE_NOT_CONFIGURED: 422,
+  UNAUTHENTICATED: 401,
+  INVALID_CREDENTIALS: 401,
+  FORBIDDEN: 403,
+  EMAIL_TAKEN: 409,
+  NO_CADDIE_RESERVED: 409,
+  CADDIE_ALREADY_ASSIGNED: 409,
+  UNIT_UNAVAILABLE: 409,
 };
 
 export function errorHandler(err: FastifyError | Error, req: FastifyRequest, reply: FastifyReply) {

@@ -85,6 +85,8 @@ interface BookingRow {
   groupId: string | null;
   customerId: string | null;
   customerName: string | null;
+  customerPhone: string | null;
+  customerEmail: string | null;
   notes: string | null;
 }
 
@@ -105,7 +107,8 @@ async function loadDay(q: Queryable, courseId: string, date: string) {
           `SELECT b.id, b.reference, b.tee_time_id AS "teeTimeId", b.players, b.holes,
                   b.is_private AS "isPrivate", b.channel, b.group_id AS "groupId",
                   b.customer_id AS "customerId",
-                  NULLIF(concat_ws(' ', cu.first_name, cu.last_name), '') AS "customerName", b.notes
+                  NULLIF(concat_ws(' ', cu.first_name, cu.last_name), '') AS "customerName",
+                  cu.phone AS "customerPhone", cu.email AS "customerEmail", b.notes
              FROM bookings b LEFT JOIN customers cu ON cu.id = b.customer_id
             WHERE b.tee_time_id = ANY($1) AND b.status = 'confirmed'
             ORDER BY b.created_at`,

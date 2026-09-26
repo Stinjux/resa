@@ -8,7 +8,8 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:reset": "tsx src/db/reset.ts"
   },
   "dependencies": {
     "fastify": "^5.12.5",

@@ -37,7 +37,9 @@ import {
   releaseTeeTimeAllocations,
   reserve,
 } from '../resources/service.js';
+import { recomputeCharges } from '../pricing/service.js';
 import { caddieTypes, computeGrid, type GridSlot } from '../teesheet/service.js';
+import type { Payable } from '../../domain/pricing.js';
 
 export type Channel = 'web' | 'phone' | 'group' | 'walk_in' | 'staff';
 
@@ -56,6 +58,10 @@ export interface BookingItemInput {
   options?: OptionRequest[];
   playerNames?: Array<string | null>;
   notes?: string | null;
+  /** Catégorie tarifaire (ex. standard, resident). Le web impose 'standard'. */
+  customerCategory?: string;
+  /** Caddie payé avec la réservation ou sur place (défaut : réglage du golf). */
+  caddiePayment?: Payable;
 }
 
 export interface CustomerInput {
@@ -119,6 +125,23 @@ export interface BookingDetail {
   teeTime: { id: string; courseId: string; startsAt: string; localDate: string; localTime: string };
   playerNames: Array<string | null>;
   options: Array<{ resourceTypeId: string; code: string; name: string; quantity: number }>;
+  customerCategory: string;
+  caddiePayment: Payable;
+  pricing: {
+    currency: string | null;
+    totalMinor: number | null;
+    dueWithBookingMinor: number | null;
+    dueOnSiteMinor: number | null;
+    lines: Array<{
+      kind: string;
+      label: string;
+      quantity: number;
+      unitAmountMinor: number;
+      totalMinor: number;
+      taxMinor: number;
+      payable: Payable;
+    }>;
+  };
   createdAt: string;
   cancelledAt: string | null;
 }
@@ -128,6 +151,9 @@ export async function getBooking(q: Db | Tx, bookingId: string): Promise<Booking
     `SELECT b.id, b.reference, b.club_id AS "clubId", b.status, b.channel, b.players, b.holes,
             b.is_private AS "isPrivate", b.group_id AS "groupId", b.notes, b.customer_id AS "customerId",
             b.created_at AS "createdAt", b.cancelled_at AS "cancelledAt",
+            b.customer_category AS "customerCategory", b.caddie_payment AS "caddiePayment",
+            b.currency, b.total_minor AS "totalMinor", b.due_with_booking_minor AS "dueWithBookingMinor",
+            b.due_on_site_minor AS "dueOnSiteMinor",
             t.id AS "teeTimeId", t.course_id AS "courseId", t.starts_at AS "startsAt",
             t.local_date AS "localDate", c.timezone
        FROM bookings b
@@ -146,6 +172,12 @@ export async function getBooking(q: Db | Tx, bookingId: string): Promise<Booking
        FROM resource_allocations a JOIN resource_types rt ON rt.id = a.resource_type_id
       WHERE a.booking_id = $1 AND a.status = 'active'
       GROUP BY rt.id, rt.code, rt.name, rt.sort_order ORDER BY rt.sort_order`,
+    [bookingId],
+  );
+  const charges = await q.query(
+    `SELECT kind, label, quantity, unit_amount_minor AS "unitAmountMinor", total_minor AS "totalMinor",
+            tax_minor AS "taxMinor", payable
+       FROM booking_charges WHERE booking_id = $1 ORDER BY position`,
     [bookingId],
   );
   return {
@@ -169,6 +201,15 @@ export async function getBooking(q: Db | Tx, bookingId: string): Promise<Booking
     },
     playerNames: players.rows.map((p) => p.name),
     options: options.rows,
+    customerCategory: b.customerCategory,
+    caddiePayment: b.caddiePayment,
+    pricing: {
+      currency: b.currency,
+      totalMinor: b.totalMinor,
+      dueWithBookingMinor: b.dueWithBookingMinor,
+      dueOnSiteMinor: b.dueOnSiteMinor,
+      lines: charges.rows,
+    },
     createdAt: b.createdAt.toISOString(),
     cancelledAt: b.cancelledAt ? b.cancelledAt.toISOString() : null,
   };
@@ -483,8 +524,8 @@ async function placeBookings(
     const idempotencyKey = ctx.idempotencyKey ? (i === 0 ? ctx.idempotencyKey : `${ctx.idempotencyKey}#${i}`) : null;
     const { rows } = await tx.query(
       `INSERT INTO bookings (reference, club_id, tee_time_id, customer_id, channel, players, holes, is_private,
-                             group_id, notes, idempotency_key)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+                             group_id, notes, idempotency_key, customer_category, caddie_payment)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
       [
         reference,
         theClub.id,
@@ -497,6 +538,8 @@ async function placeBookings(
         groupId,
         r.item.notes ?? null,
         idempotencyKey,
+        ctx.channel === 'web' ? 'standard' : (r.item.customerCategory ?? 'standard'),
+        r.item.caddiePayment ?? theClub.defaultCaddiePayment,
       ],
     );
     const bookingId: string = rows[0].id;
@@ -511,6 +554,7 @@ async function placeBookings(
     await ensureCaddie(tx, teeTime, r.course, req.holes, caddieRts);
     await reserveOptions(tx, teeTime, r.course, req.holes, bookingId, optionsPerItem[i]!);
     await syncTeeTime(tx, teeTime.id);
+    const priced = await recomputeCharges(tx, bookingId, theClub, r.course);
 
     await audit(tx, {
       clubId: theClub.id,
@@ -528,6 +572,8 @@ async function placeBookings(
         channel: ctx.channel,
         groupId,
         options: optionsPerItem[i]!.map((o) => ({ code: o.rt.code, quantity: o.quantity })),
+        totalMinor: priced.totalMinor,
+        currency: priced.currency,
       },
     });
     bookingIds.push(bookingId);
@@ -705,6 +751,7 @@ export async function moveBooking(
     await reserveOptions(tx, targetTt, course, booking.holes, booking.id, options);
     await syncTeeTime(tx, targetId);
     await syncTeeTime(tx, booking.teeTimeId);
+    const priced = await recomputeCharges(tx, booking.id, club, course);
 
     await audit(tx, {
       clubId: booking.clubId,
@@ -717,6 +764,7 @@ export async function moveBooking(
         fromTeeTimeId: booking.teeTimeId,
         toTeeTimeId: targetId,
         joinedExistingTeeTime: state.bookedPlayers > 0,
+        totalMinor: priced.totalMinor,
       },
     });
   });
@@ -730,6 +778,8 @@ export interface BookingPatch {
   options?: OptionRequest[]; // remplace l'ensemble des options
   playerNames?: Array<string | null>;
   notes?: string | null;
+  customerCategory?: string;
+  caddiePayment?: Payable;
 }
 
 export async function updateBooking(
@@ -778,13 +828,18 @@ export async function updateBooking(
       // caddie change avec la formule.
       await releaseTeeTimeAllocations(tx, teeTime.id);
       await ensureCaddie(tx, teeTime, course, next.holes, caddieRts);
+      // La période change : l'attribution nominative est à refaire par le starter.
+      await tx.query('UPDATE tee_times SET caddie_id = NULL WHERE id = $1', [teeTime.id]);
     }
 
     await tx.query(
       `UPDATE bookings SET players = $2, holes = $3, is_private = $4,
-              notes = CASE WHEN $5 THEN $6 ELSE notes END, updated_at = now()
+              notes = CASE WHEN $5 THEN $6 ELSE notes END,
+              customer_category = coalesce($7, customer_category),
+              caddie_payment = coalesce($8, caddie_payment), updated_at = now()
         WHERE id = $1`,
-      [booking.id, next.players, next.holes, next.isPrivate, patch.notes !== undefined, patch.notes ?? null],
+      [booking.id, next.players, next.holes, next.isPrivate, patch.notes !== undefined, patch.notes ?? null,
+        patch.customerCategory ?? null, patch.caddiePayment ?? null],
     );
     if (next.players !== booking.players || patch.playerNames) {
       const existing = await tx.query('SELECT position, name FROM booking_players WHERE booking_id = $1', [booking.id]);
@@ -800,6 +855,7 @@ export async function updateBooking(
       }
     }
     await syncTeeTime(tx, teeTime.id);
+    const priced = await recomputeCharges(tx, booking.id, await getClub(tx, booking.clubId), course);
 
     await audit(tx, {
       clubId: booking.clubId,
@@ -812,6 +868,7 @@ export async function updateBooking(
         before: { players: booking.players, holes: booking.holes, isPrivate: booking.isPrivate,
           options: oldOptions.map((o) => ({ code: o.rt.code, quantity: o.quantity })) },
         after: { ...next, options: newOptions.map((o) => ({ code: o.rt.code, quantity: o.quantity })) },
+        totalMinor: priced.totalMinor,
       },
     });
   });

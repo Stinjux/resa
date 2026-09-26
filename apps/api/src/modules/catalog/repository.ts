@@ -2,6 +2,7 @@
 // types de ressources. Aucune valeur métier n'est codée en dur ici.
 
 import type { Queryable } from '../../db/pool.js';
+import type { Tariff } from '../../domain/pricing.js';
 import type { ScheduleRule } from '../../domain/schedule.js';
 import { DomainError } from '../../shared/errors.js';
 
@@ -16,6 +17,8 @@ export interface Club {
   pricesIncludeTax: boolean;
   bookingHorizonDays: number;
   minLeadMinutes: number;
+  taxRateBp: number;
+  defaultCaddiePayment: 'on_site' | 'with_booking';
 }
 
 export interface Course {
@@ -50,7 +53,8 @@ export interface ResourceType {
 
 const CLUB_COLUMNS = `id, organization_id AS "organizationId", code, name, timezone, currency,
   default_locale AS "defaultLocale", prices_include_tax AS "pricesIncludeTax",
-  booking_horizon_days AS "bookingHorizonDays", min_lead_minutes AS "minLeadMinutes"`;
+  booking_horizon_days AS "bookingHorizonDays", min_lead_minutes AS "minLeadMinutes",
+  tax_rate_bp AS "taxRateBp", default_caddie_payment AS "defaultCaddiePayment"`;
 
 const COURSE_COLUMNS = `id, club_id AS "clubId", code, name, allowed_holes AS "allowedHoles",
   default_interval_minutes AS "defaultIntervalMinutes", default_max_players AS "defaultMaxPlayers",
@@ -102,6 +106,18 @@ export async function listResourceTypes(q: Queryable, clubId: string, opts: { ac
     `SELECT ${RESOURCE_TYPE_COLUMNS} FROM resource_types
       WHERE club_id = $1 ${opts.activeOnly === false ? '' : 'AND active'}
       ORDER BY sort_order, name`,
+    [clubId],
+  );
+  return rows;
+}
+
+export async function listTariffs(q: Queryable, clubId: string): Promise<Tariff[]> {
+  const { rows } = await q.query(
+    `SELECT id, course_id AS "courseId", product, name, holes, customer_category AS "customerCategory",
+            valid_from AS "validFrom", valid_to AS "validTo", weekdays,
+            start_time::text AS "startTime", end_time::text AS "endTime",
+            amount_minor AS "amountMinor", basis, priority
+       FROM tariffs WHERE club_id = $1 AND active`,
     [clubId],
   );
   return rows;

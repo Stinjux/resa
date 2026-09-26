@@ -33,10 +33,12 @@ export interface FixtureOptions {
   interval?: number;
   open?: string;
   close?: string;
+  organizationId?: string;
 }
 
 export interface Fixture {
   clubId: string;
+  organizationId: string;
   courseId: string;
   rt: Record<'CADDIE' | 'CART' | 'TROLLEY' | 'BAG_MEN_RH', string>;
 }
@@ -45,11 +47,13 @@ export interface Fixture {
 export async function createClub(db: Db, o: FixtureOptions = {}): Promise<Fixture> {
   counter += 1;
   const code = `T${process.pid}_${counter}_${Math.random().toString(36).slice(2, 6)}`;
-  const org = await db.query(`INSERT INTO organizations (code, name) VALUES ($1, 'Test') RETURNING id`, [code]);
+  const organizationId: string =
+    o.organizationId ??
+    (await db.query(`INSERT INTO organizations (code, name) VALUES ($1, 'Test') RETURNING id`, [code])).rows[0].id;
   const club = await db.query(
     `INSERT INTO clubs (organization_id, code, name, timezone, currency)
      VALUES ($1, $2, 'Golf test', 'Africa/Casablanca', 'MAD') RETURNING id`,
-    [org.rows[0].id, code],
+    [organizationId, code],
   );
   const clubId = club.rows[0].id;
   const course = await db.query(
@@ -59,6 +63,13 @@ export async function createClub(db: Db, o: FixtureOptions = {}): Promise<Fixtur
   await db.query(
     `INSERT INTO schedule_rules (club_id, name, kind, start_time, end_time) VALUES ($1, 'Ouverture', 'open', $2, $3)`,
     [clubId, o.open ?? '07:00', o.close ?? '17:00'],
+  );
+  await db.query(
+    `INSERT INTO tariffs (club_id, product, name, holes, amount_minor, basis)
+     VALUES ($1, 'green_fee', 'Green fee 18 trous', 18, 130000, 'per_player'),
+            ($1, 'green_fee', 'Green fee 9 trous', 9, 75000, 'per_player'),
+            ($1, 'private_surcharge', 'Supplément départ privé', NULL, 100000, 'per_booking')`,
+    [clubId],
   );
   const rts = await db.query(
     `INSERT INTO resource_types (club_id, code, kind, name, variant, scope, required_per_tee_time, total_quantity,
@@ -71,7 +82,7 @@ export async function createClub(db: Db, o: FixtureOptions = {}): Promise<Fixtur
     [clubId, o.caddies ?? 10, o.carts ?? 5, o.bagsMenRight ?? 2],
   );
   const rt = Object.fromEntries(rts.rows.map((r) => [r.code, r.id])) as Fixture['rt'];
-  return { clubId, courseId: course.rows[0].id, rt };
+  return { clubId, organizationId, courseId: course.rows[0].id, rt };
 }
 
 export const staff = { channel: 'phone' as const, actor: { type: 'system' as const } };
