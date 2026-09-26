@@ -8,6 +8,8 @@ import { createPosRegistry } from './integrations/pos/registry.js';
 import { modelFromEnv } from './modules/ai/model.js';
 import { createMessagingRegistry } from './integrations/messaging/registry.js';
 import { processMessagingQueue } from './modules/messaging/service.js';
+import { emailSenderFromEnv } from './integrations/email/sender.js';
+import { processEmailQueue, scheduleReminders } from './modules/notifications/service.js';
 import { processPosJobs } from './modules/pos-sync/service.js';
 
 const config = loadConfig();
@@ -43,7 +45,8 @@ const webRoot = process.env.WEB_ROOT ?? fileURLToPath(new URL('../../web/dist', 
 const posRegistry = createPosRegistry();
 const ai = modelFromEnv();
 const messaging = createMessagingRegistry();
-const app = buildServer({ db, now: () => new Date(), posRegistry, ai, messaging }, { logger: true, webRoot, trustProxy: process.env.TRUST_PROXY === '1' });
+const emailSender = emailSenderFromEnv();
+const app = buildServer({ db, now: () => new Date(), posRegistry, ai, messaging, emailSender }, { logger: true, webRoot, trustProxy: process.env.TRUST_PROXY === '1' });
 
 // Messagerie : réponses de l'IA aux messages reçus et envois (toutes les 5 s).
 {
@@ -59,6 +62,23 @@ const app = buildServer({ db, now: () => new Date(), posRegistry, ai, messaging 
       busy = false;
     }
   }, Number(process.env.MESSAGING_WORKER_INTERVAL_MS ?? 5_000)).unref();
+}
+
+// E-mails : rappels avant le départ et envois (toutes les 30 s).
+{
+  let busy = false;
+  setInterval(async () => {
+    if (busy) return;
+    busy = true;
+    try {
+      await scheduleReminders(db, new Date());
+      await processEmailQueue(db, emailSender, new Date());
+    } catch (err) {
+      app.log.error(err, 'E-mails');
+    } finally {
+      busy = false;
+    }
+  }, Number(process.env.EMAIL_WORKER_INTERVAL_MS ?? 30_000)).unref();
 }
 
 // Nettoyage des sessions expirées (toutes les heures).
@@ -84,6 +104,7 @@ if (process.env.POS_WORKER !== '0') {
 }
 
 app.listen({ host: config.host, port: config.port }).then(() => {
+  console.log(emailSender.mode === 'smtp' ? 'E-mails : envoi SMTP activé.' : 'E-mails : mode journal (définissez SMTP_URL pour envoyer réellement).');
   console.log(ai ? `IA activée (modèle ${ai.name}).` : 'IA désactivée : définissez ANTHROPIC_API_KEY pour l’activer.');
   console.log(`\n  ⛳ Resa Golf prêt : http://localhost:${config.port}\n`);
 }).catch((err) => {

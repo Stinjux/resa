@@ -6,6 +6,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import type { Db } from '../db/pool.js';
 import { createPosRegistry, type PosRegistry } from '../integrations/pos/registry.js';
 import type { AiModel } from '../modules/ai/model.js';
+import { LogEmailSender, type EmailSender } from '../integrations/email/sender.js';
 import { createMessagingRegistry, type MessagingRegistry } from '../integrations/messaging/registry.js';
 import { registerAuth } from './auth.js';
 import { errorHandler } from './errors.js';
@@ -14,6 +15,7 @@ import { aiRoutes } from './routes/ai.js';
 import { configRoutes } from './routes/config.js';
 import { messagingRoutes } from './routes/messaging.js';
 import { operationsRoutes } from './routes/operations.js';
+import { emailRoutes } from './routes/emails.js';
 import { orderRoutes } from './routes/orders.js';
 import { staffRoutes } from './routes/staff.js';
 import { bookingRoutes } from './routes/bookings.js';
@@ -27,6 +29,7 @@ export interface AppDeps {
   /** Modèle d'IA ; null si aucune clé n'est configurée. */
   ai: AiModel | null;
   messaging: MessagingRegistry;
+  emailSender: EmailSender;
 }
 
 /** webRoot : dossier de l'interface compilée (apps/web/dist), servie sur « / ». */
@@ -39,9 +42,9 @@ export interface ServerOptions {
   loginRateLimit?: number;
 }
 
-export function buildServer(input: Omit<AppDeps, 'posRegistry' | 'ai' | 'messaging'> & { posRegistry?: PosRegistry; ai?: AiModel | null; messaging?: MessagingRegistry }, opts: ServerOptions = {}): FastifyInstance {
+export function buildServer(input: Omit<AppDeps, 'posRegistry' | 'ai' | 'messaging' | 'emailSender'> & { posRegistry?: PosRegistry; ai?: AiModel | null; messaging?: MessagingRegistry; emailSender?: EmailSender }, opts: ServerOptions = {}): FastifyInstance {
   const deps: AppDeps = { ...input, posRegistry: input.posRegistry ?? createPosRegistry(), ai: input.ai ?? null,
-    messaging: input.messaging ?? createMessagingRegistry() };
+    messaging: input.messaging ?? createMessagingRegistry(), emailSender: input.emailSender ?? new LogEmailSender() };
   const app = Fastify({ logger: opts.logger ?? false, trustProxy: opts.trustProxy ?? false });
   // En-têtes de sécurité (CSP : tout est servi par nos soins ; styles en ligne de React autorisés).
   app.register(fastifyHelmet, {
@@ -75,6 +78,7 @@ export function buildServer(input: Omit<AppDeps, 'posRegistry' | 'ai' | 'messagi
     aiRoutes(api, deps);
     messagingRoutes(api, deps);
     operationsRoutes(api, deps);
+    emailRoutes(api, deps);
   });
 
   if (opts.webRoot && existsSync(opts.webRoot)) {

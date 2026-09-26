@@ -29,12 +29,13 @@ Chaque étape livre un logiciel fonctionnel et testé.
   annulations, sans données personnelles en clair.
 
 | 8 | **IA** : assistant de réservation en langage naturel (brouillon + confirmation humaine), questions directes, rapports d'activité rédigés par l'IA sur des chiffres calculés par Resa (voir `docs/IA.md`) | ✅ livré |
-
 | 9 | **WhatsApp / SMS** : demandes recueillies par l'IA, validation obligatoire par la réception ou la direction, confirmation au client, simulateur, contrat de connecteur (voir `docs/MESSAGERIE.md`) | ✅ livré (fournisseur à choisir) |
+| 10 | **Accueil** : arrivées / absences (frais d'absence réglables), départs bloqués (tournoi, entretien), feuille imprimable et export Excel | ✅ livré |
+| 11 | **E-mails** : confirmation, modification, annulation, rappel la veille ; fr/en/ar ; récapitulatif unique pour un groupe ; file avec reprises ; SMTP standard (voir `docs/EMAILS.md`) | ✅ livré (serveur SMTP à fournir) |
 
 ## Suites possibles
 
-- Paiement en ligne (prestataire à choisir, ex. CMI) et e-mails / SMS de confirmation.
+- Paiement en ligne (prestataire à choisir, ex. CMI) et SMS de confirmation.
 - Écran de gestion des comptes du personnel.
 - Traduction des écrans du personnel et des libellés saisis par les golfs (tarifs, matériel).
 - Connecteur du fournisseur de caisse choisi (`docs/POS.md`).

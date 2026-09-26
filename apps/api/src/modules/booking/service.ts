@@ -37,6 +37,7 @@ import {
   releaseTeeTimeAllocations,
   reserve,
 } from '../resources/service.js';
+import { enqueueBookingEmail } from '../notifications/service.js';
 import { syncOrder, syncOrders } from '../orders/service.js';
 import { recomputeTeeTimeCharges } from '../pricing/service.js';
 import { caddieTypes, computeGrid, type GridSlot } from '../teesheet/service.js';
@@ -601,6 +602,8 @@ async function placeBookings(
     });
     bookingIds.push(bookingId);
   }
+  // Après la boucle : montants définitifs (partage du caddie). Un groupe reçoit un seul récapitulatif.
+  for (const id of groupId ? bookingIds.slice(0, 1) : bookingIds) await enqueueBookingEmail(tx, id, 'confirmation');
   return bookingIds;
 }
 
@@ -713,6 +716,7 @@ export async function cancelBooking(
     const tt = teeTimes.get(booking.teeTimeId)!;
     await reprice(tx, tt.id, club, await getCourse(tx, tt.courseId));
     await syncOrder(tx, bookingId); // commande : frais d'annulation éventuels
+    await enqueueBookingEmail(tx, bookingId, 'cancellation');
     await audit(tx, {
       clubId: booking.clubId,
       actor: opts.actor,
@@ -788,6 +792,7 @@ export async function moveBooking(
     // Les réservations restées sur l'ancien départ reprennent le caddie à leur compte.
     const sourceTt = teeTimes.get(booking.teeTimeId)!;
     await reprice(tx, sourceTt.id, club, await getCourse(tx, sourceTt.courseId));
+    await enqueueBookingEmail(tx, booking.id, 'modification', `move:${deps.now().toISOString()}`);
 
     await audit(tx, {
       clubId: booking.clubId,
@@ -892,6 +897,10 @@ export async function updateBooking(
     }
     await syncTeeTime(tx, teeTime.id);
     const priced = (await reprice(tx, teeTime.id, await getClub(tx, booking.clubId), course)).get(booking.id)!;
+    // Le client est prévenu si ce qui le concerne change (joueurs, formule, options, privé).
+    if (next.players !== booking.players || holesChanged || next.isPrivate !== booking.isPrivate || patch.options !== undefined) {
+      await enqueueBookingEmail(tx, booking.id, 'modification', `update:${deps.now().toISOString()}`);
+    }
 
     await audit(tx, {
       clubId: booking.clubId,

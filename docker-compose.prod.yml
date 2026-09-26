@@ -31,6 +31,8 @@ services:
       TRUST_PROXY: "1"
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       AI_MODEL: ${AI_MODEL:-}
+      SMTP_URL: ${SMTP_URL:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
 
   caddy:
     image: caddy:2

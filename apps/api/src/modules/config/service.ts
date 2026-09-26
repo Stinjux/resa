@@ -81,6 +81,7 @@ const CLUB_SETTINGS: ColumnMap = {
   cancellationFreeHours: 'cancellation_free_hours', cancellationFeePercent: 'cancellation_fee_percent',
   customerCanCancel: 'customer_can_cancel', onlinePayment: 'online_payment', posProvider: 'pos_provider',
   messagingProvider: 'messaging_provider', noShowFeePercent: 'no_show_fee_percent',
+  emailEnabled: 'email_enabled', emailReplyTo: 'email_reply_to', contactPhone: 'contact_phone', reminderHoursBefore: 'reminder_hours_before',
 };
 
 function auditData(def: EntityDef, values: Record<string, unknown>) {
@@ -205,7 +206,9 @@ export async function getClubConfig(q: Queryable, clubId: string) {
                     default_caddie_payment AS "defaultCaddiePayment", caddie_fee_split AS "caddieFeeSplit",
                     cancellation_free_hours AS "cancellationFreeHours", cancellation_fee_percent AS "cancellationFeePercent",
                     customer_can_cancel AS "customerCanCancel", online_payment AS "onlinePayment", pos_provider AS "posProvider",
-                    messaging_provider AS "messagingProvider", no_show_fee_percent AS "noShowFeePercent"
+                    messaging_provider AS "messagingProvider", no_show_fee_percent AS "noShowFeePercent",
+                    email_enabled AS "emailEnabled", email_reply_to AS "emailReplyTo", contact_phone AS "contactPhone",
+                    reminder_hours_before AS "reminderHoursBefore"
                FROM clubs WHERE id = $1`, [clubId]),
     q.query(`SELECT id, code, name, allowed_holes AS "allowedHoles", default_interval_minutes AS "defaultIntervalMinutes",
                     default_max_players AS "defaultMaxPlayers", play_minutes_9 AS "playMinutes9", play_minutes_18 AS "playMinutes18", active

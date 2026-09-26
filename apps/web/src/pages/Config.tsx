@@ -4,7 +4,7 @@ import { addDays, money, todayIn } from '../format';
 import { EntityForm, weekdaysLabel, type Field } from './EntityForm';
 import { ErrorBox, useClubs } from './common';
 
-type Tab = 'general' | 'schedule' | 'tariffs' | 'resources' | 'pos';
+type Tab = 'general' | 'schedule' | 'tariffs' | 'resources' | 'emails' | 'pos';
 
 export function Config({ user }: { user: User }) {
   const [clubsVersion, setClubsVersion] = useState(0);
@@ -39,7 +39,7 @@ export function Config({ user }: { user: User }) {
         )}
         {isOrgAdmin && <button className="btn sm" onClick={() => setCreating(true)}>+ Nouveau golf</button>}
         <nav className="nav">
-          {([['general', 'Général'], ['schedule', 'Parcours & horaires'], ['tariffs', 'Tarifs'], ['resources', 'Caddies & matériel'], ['pos', 'Caisse (POS)']] as Array<[Tab, string]>)
+          {([['general', 'Général'], ['schedule', 'Parcours & horaires'], ['tariffs', 'Tarifs'], ['resources', 'Caddies & matériel'], ['emails', 'E-mails'], ['pos', 'Caisse (POS)']] as Array<[Tab, string]>)
             .map(([t, l]) => <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{l}</button>)}
         </nav>
       </div>
@@ -74,6 +74,7 @@ export function Config({ user }: { user: User }) {
       {cfg && tab === 'schedule' && <Schedule cfg={cfg} base={base} save={save} />}
       {cfg && tab === 'tariffs' && <Tariffs cfg={cfg} save={save} />}
       {cfg && tab === 'resources' && <Resources cfg={cfg} base={base} save={save} reload={load} />}
+      {cfg && tab === 'emails' && <Emails clubId={clubId!} enabled={cfg.club.emailEnabled} />}
       {cfg && tab === 'pos' && <PosSync clubId={clubId!} posProvider={cfg.club.posProvider} />}
     </div>
   );
@@ -105,6 +106,10 @@ function General({ cfg, onSave }: { cfg: any; onSave: (v: Record<string, unknown
       hint: 'Nécessite un prestataire de paiement (non encore branché)' },
     { key: 'messagingProvider', label: 'Messagerie WhatsApp / SMS', type: 'select', options: [['', 'Aucune'], ...(cfg.messagingProviders ?? []).map((p: string) => [p, p === 'local' ? 'local (simulateur)' : p] as [string, string])],
       hint: 'Les demandes reçues doivent être validées par la réception ou la direction' },
+    { key: 'emailEnabled', label: 'E-mails aux clients (confirmation, modification, annulation, rappel)', type: 'checkbox' },
+    { key: 'reminderHoursBefore', label: 'Rappel par e-mail (heures avant le départ, 0 = aucun)', type: 'number' },
+    { key: 'contactPhone', label: 'Téléphone affiché aux clients', type: 'text' },
+    { key: 'emailReplyTo', label: 'Adresse de réponse des e-mails', type: 'text', hint: 'Les réponses des clients arrivent à cette adresse' },
     { key: 'posProvider', label: 'Caisse (POS)', type: 'select', options: [['', 'Aucune'], ...(cfg.posProviders ?? []).map((p: string) => [p, p === 'local' ? 'local (démonstration)' : p] as [string, string])] },
   ];
   return (
@@ -381,6 +386,69 @@ function Units({ cfg, save }: { cfg: any; save: Save }) {
 }
 
 // ---------------------------------------------------------------------------
+
+const EMAIL_STATUS: Record<string, [string, string]> = {
+  pending: ['en attente', 'badge'], sent: ['envoyé', 'badge ok'], logged: ['journalisé (non envoyé)', 'badge'], failed: ['en échec', 'badge private'],
+};
+const EMAIL_KIND: Record<string, string> = { confirmation: 'Confirmation', modification: 'Modification', cancellation: 'Annulation', reminder: 'Rappel' };
+
+function Emails({ clubId, enabled }: { clubId: string; enabled: boolean }) {
+  const [data, setData] = useState<any>(null);
+  const [preview, setPreview] = useState<any>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const load = () => get(`/api/clubs/${clubId}/emails`).then(setData).catch((e) => setError(e.message));
+  useEffect(() => { load(); setPreview(null); }, [clubId]);
+
+  async function resend(id: string) {
+    setError(null);
+    try { await post(`/api/clubs/${clubId}/emails/${id}/resend`); setMessage('Renvoyé.'); load(); } catch (e) { setError((e as Error).message); }
+  }
+
+  return (
+    <div className="stack">
+      <div className="card stack">
+        <h2>E-mails envoyés aux clients</h2>
+        <p className="small muted" style={{ margin: 0 }}>
+          {!enabled ? <>Les e-mails sont <strong>désactivés</strong> pour ce golf (onglet Général).</>
+            : data?.mode === 'smtp' ? <>Envoi <strong>actif</strong> (SMTP). Confirmation, modification, annulation et rappel partent automatiquement vers les clients qui ont une adresse e-mail.</>
+            : <><strong>Mode journal</strong> : aucun e-mail ne part réellement (serveur d'envoi non configuré, variable <code>SMTP_URL</code>). Les messages sont préparés et consultables ici.</>}
+        </p>
+        {message && <div className="alert ok">{message}</div>}
+        <ErrorBox error={error} />
+      </div>
+      <div className="card table-wrap">
+        <table className="sheet">
+          <thead><tr><th>Date</th><th>Type</th><th>Réservation</th><th>Destinataire</th><th>État</th><th /></tr></thead>
+          <tbody>
+            {data?.emails.map((m: any) => (
+              <tr key={m.id}>
+                <td className="small">{new Date(m.createdAt).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}</td>
+                <td>{EMAIL_KIND[m.kind] ?? m.kind}</td>
+                <td>{m.reference}</td>
+                <td className="small">{m.to}</td>
+                <td><span className={EMAIL_STATUS[m.status]?.[1]}>{EMAIL_STATUS[m.status]?.[0] ?? m.status}</span>
+                  {m.lastError && <div className="small" style={{ color: 'var(--danger)' }}>{m.lastError}</div>}</td>
+                <td className="row">
+                  <button className="btn sm" onClick={() => get(`/api/emails/${m.id}`).then((r) => setPreview(r.email)).catch((e) => setError(e.message))}>Voir</button>
+                  {m.status !== 'pending' && <button className="btn sm" onClick={() => resend(m.id)}>Renvoyer</button>}
+                </td>
+              </tr>
+            ))}
+            {data?.emails.length === 0 && <tr><td colSpan={6} className="muted">Aucun e-mail. Les clients sans adresse e-mail n'en reçoivent pas.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      {preview && (
+        <div className="card stack">
+          <div className="row"><strong>{preview.subject}</strong><span className="small muted">→ {preview.to}</span><span className="spacer" />
+            <button className="btn sm" onClick={() => setPreview(null)}>Fermer</button></div>
+          <iframe title="Aperçu" sandbox="" srcDoc={preview.html} style={{ width: '100%', height: 520, border: '1px solid var(--border)', borderRadius: 8, background: '#fff' }} />
+        </div>
+      )}
+    </div>
+  );
+}
 
 const JOB_STATUS: Record<string, [string, string]> = {
   pending: ['en attente', 'badge'], processing: ['en cours', 'badge'], succeeded: ['synchronisé', 'badge ok'],
