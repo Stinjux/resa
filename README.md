@@ -4,26 +4,61 @@ Logiciel multi-golfs (4 golfs au Maroc au départ, conçu pour l'international) 
 calendrier central des départs, réservations web / téléphone / groupe,
 caddies, matériel, et future intégration POS.
 
+## Lancer en local
+
+### Option A — avec Docker (recommandé, rien d'autre à installer)
+
+1. Installez **Docker Desktop** (Windows / Mac) : https://www.docker.com/products/docker-desktop/ et lancez-le.
+2. Téléchargez le projet :
+   - avec Git : `git clone https://github.com/Stinjux/resa.git`
+   - ou sur GitHub : bouton vert **Code → Download ZIP**, puis décompressez.
+3. Ouvrez un terminal dans le dossier `resa` et lancez :
+   ```bash
+   docker compose up --build
+   ```
+4. Quand le message `⛳ Resa Golf prêt` s'affiche, ouvrez **http://localhost:3000**.
+
+La base est créée et les données de démonstration sont chargées automatiquement.
+Arrêt : `Ctrl+C` (les données sont conservées). Tout effacer : `docker compose down -v`.
+
+### Option B — sans Docker
+
+Prérequis : **Node.js 22** (https://nodejs.org) et **PostgreSQL 16** (https://www.postgresql.org/download/).
+
+```bash
+# 1. Créer l'utilisateur et la base (dans psql, en tant que « postgres »)
+CREATE ROLE resa LOGIN PASSWORD 'resa' CREATEDB;
+CREATE DATABASE resa_dev OWNER resa;
+
+# 2. Dans le dossier du projet
+npm install
+cp apps/api/.env.example apps/api/.env     # Windows : copy apps\api\.env.example apps\api\.env
+npm start                                  # compile, crée les tables, charge la démo
+```
+
+Puis ouvrez **http://localhost:3000**.
+
+### Comptes de démonstration
+
+Sur la page **Connexion**, un clic sur un compte suffit (mot de passe `Demo2026!`) :
+réception, starter, direction, administrateur, client.
+
 ## Stack
 
-- **Node.js 22 + TypeScript**, API HTTP **Fastify**, validation **zod**
+- **Node.js 22 + TypeScript**, API HTTP **Fastify**, validation **zod**, interface **React + Vite**
 - **PostgreSQL 16** : verrous de ligne + verrous consultatifs pour empêcher
   toute surréservation, `tstzrange` pour les périodes d'occupation du matériel
 - **Luxon** pour les fuseaux horaires IANA par golf
 - **Vitest** : tests unitaires (règles pures) et d'intégration (vraie base)
 
-## Démarrer
+## Développement
 
 ```bash
-npm install
-cp apps/api/.env.example apps/api/.env   # adapter DATABASE_URL si besoin
-# Base locale : createdb resa_dev && createdb resa_test (utilisateur resa/resa par défaut)
-npm run db:migrate
-npm run db:seed        # 4 golfs de démonstration (valeurs à remplacer)
 npm run db:reset       # (dév. uniquement) efface la base, migre et recharge la démo
-npm start              # compile l'interface et ouvre tout sur http://127.0.0.1:3000
-npm run dev            # API seule (rechargement auto) ; `npm run dev:web` pour l'interface sur :5173
-npm test               # utilise TEST_DATABASE_URL (base effacée à chaque exécution)
+npm run dev            # API avec rechargement auto sur :3000
+npm run dev:web        # interface avec rechargement auto sur :5173
+npm test               # tests (base resa_test, effacée à chaque exécution)
+npm run typecheck
 ```
 
 ## Interface web (`apps/web`, React + Vite)
