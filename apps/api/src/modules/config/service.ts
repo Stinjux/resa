@@ -78,6 +78,8 @@ const CLUB_SETTINGS: ColumnMap = {
   name: 'name', timezone: 'timezone', currency: 'currency', defaultLocale: 'default_locale',
   pricesIncludeTax: 'prices_include_tax', taxRateBp: 'tax_rate_bp', bookingHorizonDays: 'booking_horizon_days',
   minLeadMinutes: 'min_lead_minutes', defaultCaddiePayment: 'default_caddie_payment', caddieFeeSplit: 'caddie_fee_split',
+  cancellationFreeHours: 'cancellation_free_hours', cancellationFeePercent: 'cancellation_fee_percent',
+  customerCanCancel: 'customer_can_cancel', onlinePayment: 'online_payment', posProvider: 'pos_provider',
 };
 
 function auditData(def: EntityDef, values: Record<string, unknown>) {
@@ -199,7 +201,9 @@ export async function getClubConfig(q: Queryable, clubId: string) {
   const [club, courses, rules, tariffs, resourceTypes, overrides, caddies, units] = await Promise.all([
     q.query(`SELECT id, code, name, timezone, currency, default_locale AS "defaultLocale", prices_include_tax AS "pricesIncludeTax",
                     tax_rate_bp AS "taxRateBp", booking_horizon_days AS "bookingHorizonDays", min_lead_minutes AS "minLeadMinutes",
-                    default_caddie_payment AS "defaultCaddiePayment", caddie_fee_split AS "caddieFeeSplit"
+                    default_caddie_payment AS "defaultCaddiePayment", caddie_fee_split AS "caddieFeeSplit",
+                    cancellation_free_hours AS "cancellationFreeHours", cancellation_fee_percent AS "cancellationFeePercent",
+                    customer_can_cancel AS "customerCanCancel", online_payment AS "onlinePayment", pos_provider AS "posProvider"
                FROM clubs WHERE id = $1`, [clubId]),
     q.query(`SELECT id, code, name, allowed_holes AS "allowedHoles", default_interval_minutes AS "defaultIntervalMinutes",
                     default_max_players AS "defaultMaxPlayers", play_minutes_9 AS "playMinutes9", play_minutes_18 AS "playMinutes18", active

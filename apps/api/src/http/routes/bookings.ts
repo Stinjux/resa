@@ -146,8 +146,8 @@ export function bookingRoutes(app: FastifyInstance, deps: AppDeps) {
   app.post('/api/bookings/:id/cancel', async (req) => {
     const { id } = idParam.parse(req.params);
     assertCan(req.principal, 'booking.manage', await clubOf.booking(deps, id));
-    const { reason } = z.object({ reason: z.string().max(500).nullable().optional() }).parse(req.body ?? {});
-    return { booking: await cancelBooking(deps, id, { actor: actorOf(req), reason }) };
+    const { reason, waiveFee } = z.object({ reason: z.string().max(500).nullable().optional(), waiveFee: z.boolean().optional() }).parse(req.body ?? {});
+    return { booking: await cancelBooking(deps, id, { actor: actorOf(req), reason, waiveFee }) };
   });
 
   // Déplacer une réservation, ou la réunir avec une autre en visant son départ.

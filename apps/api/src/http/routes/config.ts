@@ -74,7 +74,7 @@ export function configRoutes(app: FastifyInstance, deps: AppDeps) {
 
   app.get('/api/clubs/:clubId/config', async (req) => {
     const club = await adminClub(req);
-    return getClubConfig(deps.db, club.id);
+    return { ...(await getClubConfig(deps.db, club.id)), posProviders: [...deps.posRegistry.keys()] };
   });
 
   app.patch('/api/clubs/:clubId/config', async (req) => {
@@ -88,9 +88,12 @@ export function configRoutes(app: FastifyInstance, deps: AppDeps) {
       bookingHorizonDays: z.number().int().min(1).max(730), minLeadMinutes: z.number().int().min(0).max(10_080),
       defaultCaddiePayment: z.enum(['on_site', 'with_booking']),
       caddieFeeSplit: z.enum(['pro_rata_players', 'equal', 'first_booking']),
+      cancellationFreeHours: z.number().int().min(0).max(720), cancellationFeePercent: z.number().int().min(0).max(100),
+      customerCanCancel: z.boolean(), onlinePayment: z.enum(['none', 'optional', 'required']),
+      posProvider: z.string().nullable().refine((p) => p === null || deps.posRegistry.has(p), 'Connecteur POS non installé'),
     }).partial().strict().parse(req.body);
     await updateClubSettings(deps.db, club.id, patch, actorOf(req));
-    return getClubConfig(deps.db, club.id);
+    return { ...(await getClubConfig(deps.db, club.id)), posProviders: [...deps.posRegistry.keys()] };
   });
 
   app.post('/api/clubs/:clubId/config/:entity', async (req, reply) => {

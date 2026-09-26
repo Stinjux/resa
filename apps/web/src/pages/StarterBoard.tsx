@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { get, put, type User } from '../api';
 import { addDays, longDate, money, todayIn } from '../format';
 import { ErrorBox, useClubs } from './common';
+import { PaymentBadge } from './PaymentSection';
 
 interface Equipment { allocationId: string; resourceTypeId: string; name: string; quantity: number; units: Array<{ id: string; label: string }> }
 interface BoardBooking { id: string; reference: string; players: number; customerName: string | null; playerNames: Array<string | null>;
-  caddiePayment: string; dueOnSiteMinor: number | null; notes: string | null; equipment: Equipment[] }
+  caddiePayment: string; dueOnSiteMinor: number | null; notes: string | null; equipment: Equipment[];
+  paymentStatus: string; balanceMinor: number }
 interface BoardTeeTime { teeTimeId: string; localDate: string; localTime: string; course: { name: string }; holes: number; isPrivate: boolean;
   players: number; remaining: number; caddie: { reserved: boolean; caddieId: string | null; name: string | null }; bookings: BoardBooking[] }
 
@@ -90,7 +92,9 @@ export function StarterBoard({ user }: { user: User }) {
                           Caddie {b.caddiePayment === 'on_site'
                             ? <span className="badge warn">à encaisser sur place</span>
                             : <span className="badge ok">payé avec la réservation</span>}
-                          {(b.dueOnSiteMinor ?? 0) > 0 && <span className="muted"> · sur place : {money(b.dueOnSiteMinor, club?.currency)}</span>}
+                          {b.balanceMinor > 0
+                            ? <> · <strong>reste à payer : {money(b.balanceMinor, club?.currency)}</strong></>
+                            : <> · <PaymentBadge status={b.paymentStatus} /></>}
                         </div>
                         {b.notes && <div className="small">📝 {b.notes}</div>}
                         {b.equipment.map((e) => {

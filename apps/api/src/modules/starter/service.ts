@@ -5,6 +5,7 @@ import type { Db, Queryable } from '../../db/pool.js';
 import { withTransaction } from '../../db/pool.js';
 import { audit, type Actor } from '../../shared/audit.js';
 import { DomainError } from '../../shared/errors.js';
+import { paymentStatusOf } from '../orders/service.js';
 import { instantToLocal } from '../../shared/time.js';
 import type { Club } from '../catalog/repository.js';
 
@@ -31,6 +32,10 @@ export async function getStarterBoard(q: Queryable, club: Club, from: string, to
         await q.query(
           `SELECT b.id, b.tee_time_id AS "teeTimeId", b.reference, b.players, b.holes, b.channel,
                   b.caddie_payment AS "caddiePayment", b.due_on_site_minor AS "dueOnSiteMinor", b.notes,
+                  (SELECT o.total_minor FROM orders o WHERE o.booking_id = b.id) AS "orderTotalMinor",
+                  (SELECT coalesce((SELECT sum(amount_minor) FROM payments WHERE order_id = o.id AND status = 'confirmed'), 0)
+                        - coalesce((SELECT sum(amount_minor) FROM refunds WHERE order_id = o.id AND status = 'confirmed'), 0)
+                     FROM orders o WHERE o.booking_id = b.id)::int AS "paidMinor",
                   NULLIF(concat_ws(' ', cu.first_name, cu.last_name), '') AS "customerName",
                   (SELECT array_agg(name ORDER BY position) FROM booking_players bp WHERE bp.booking_id = b.id) AS "playerNames"
              FROM bookings b LEFT JOIN customers cu ON cu.id = b.customer_id
@@ -73,6 +78,8 @@ export async function getStarterBoard(q: Queryable, club: Club, from: string, to
       caddie: { reserved: t.caddieReserved, caddieId: t.caddieId, name: t.caddieName },
       bookings: tb.map((b) => ({
         ...b,
+        paymentStatus: paymentStatusOf(b.orderTotalMinor ?? 0, b.paidMinor ?? 0),
+        balanceMinor: (b.orderTotalMinor ?? 0) - (b.paidMinor ?? 0),
         playerNames: b.playerNames ?? [],
         equipment: equipment.filter((e) => e.bookingId === b.id),
       })),

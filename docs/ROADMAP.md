@@ -9,7 +9,7 @@ Chaque étape livre un logiciel fonctionnel et testé.
 | 3 | **Interface web** : feuille de départs, création téléphone/groupe, modification, annulation, réunion, vue starter, parcours client (première version) | ✅ livré |
 | 4 | **Configuration par golf** : paramètres (fuseau, devise, TVA, fenêtre de réservation, caddie), parcours, horaires/exceptions/fermetures avec aperçu de grille, tarifs, stocks et exceptions par jour, caddies, matériel numéroté | ✅ livré |
 | 5 | **Parcours client** : première version livrée à l'étape 3 ; reste paiement en ligne, e-mails de confirmation, annulation par le client | partiel |
-| 6 | **Commandes et paiements** : commandes internes à partir des lignes de prix, états dû/payé/remboursé, contrat POS + adaptateur local, file de synchronisation idempotente et journal d'erreurs | à faire |
+| 6 | **Commandes et paiements** : commande par réservation, encaissements et remboursements, statut de paiement calculé, frais d'annulation configurables, annulation par le client, contrat POS + adaptateur local, file de synchronisation idempotente avec reprises et journal (voir `docs/POS.md`) | ✅ livré |
 | 7 | **International et exploitation** : langues (fr/en/ar), devises, taxes, déploiement, sauvegardes, supervision | à faire |
 
 ## Garanties déjà en place (étape 1)

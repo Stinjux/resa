@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { get, patch, post, type Club, type User } from '../api';
 import { addDays, CHANNEL_LABEL, longDate, money, todayIn } from '../format';
 import { ErrorBox, useClubs, useCourses } from './common';
+import { CancelControl, PaymentBadge, PaymentSection } from './PaymentSection';
 
 interface SheetBooking {
   id: string; reference: string; players: number; holes: number; isPrivate: boolean; channel: string;
-  groupId: string | null; customerName: string | null; customerPhone: string | null;
+  groupId: string | null; customerName: string | null; customerPhone: string | null; paymentStatus?: string;
   resources: Array<{ code: string; name: string; quantity: number }>;
 }
 export interface SheetRow {
@@ -30,6 +31,7 @@ export function TeeSheet({ user }: { user: User }) {
   const [rows, setRows] = useState<SheetRow[]>([]);
   const [onlyBooked, setOnlyBooked] = useState(false);
   const [panel, setPanel] = useState<PanelState>(null);
+  const [panelVersion, setPanelVersion] = useState(0); // recharge le panneau après une action
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => { if (!clubId && clubs[0]) setClubId(clubs[0].id); }, [clubs]);
@@ -58,6 +60,7 @@ export function TeeSheet({ user }: { user: User }) {
 
   function refresh(bookingId?: string) {
     load();
+    setPanelVersion((v) => v + 1);
     setPanel(bookingId ? { kind: 'booking', id: bookingId } : null);
   }
 
@@ -109,6 +112,7 @@ export function TeeSheet({ user }: { user: User }) {
                           <strong>{b.customerName ?? b.reference}</strong> · {b.players} j
                           <span className="muted small">{CHANNEL_LABEL[b.channel]}</span>
                           {b.resources.length > 0 && <span className="muted small">🛒{b.resources.reduce((n, x) => n + x.quantity, 0)}</span>}
+                          {b.paymentStatus && b.paymentStatus !== 'unpaid' && <PaymentBadge status={b.paymentStatus} />}
                         </span>
                       ))}
                     </td>
@@ -137,7 +141,7 @@ export function TeeSheet({ user }: { user: User }) {
             <GroupPanel club={club} courseId={courseId} row={panel.row} rows={rows} onSaved={() => refresh()} onClose={() => setPanel(null)} />
           )}
           {panel?.kind === 'booking' && (
-            <BookingPanel key={panel.id} id={panel.id} rows={rows} courseId={courseId!} canManage={manage}
+            <BookingPanel key={`${panel.id}-${panelVersion}`} id={panel.id} rows={rows} courseId={courseId!} canManage={manage}
               onChanged={refresh} onClose={() => setPanel(null)} />
           )}
         </div>
@@ -415,7 +419,8 @@ function BookingPanel({ id, rows, courseId, canManage, onChanged, onClose }: {
       )}
       {others.length > 0 && <div className="small muted">Partage le départ avec : {others.map((o) => `${o.customerName ?? o.reference} (${o.players} j)`).join(', ')}</div>}
       {b.notes && <div className="small">📝 {b.notes}</div>}
-      <QuoteLines quote={{ ...b.pricing, lines: b.pricing.lines }} />
+      {b.status === 'confirmed' && <QuoteLines quote={{ ...b.pricing, lines: b.pricing.lines }} />}
+      <PaymentSection key={b.status + b.pricing.totalMinor} bookingId={id} canManage={canManage} onChanged={() => onChanged(id)} />
 
       {canManage && b.status === 'confirmed' && (
         <>
@@ -443,10 +448,7 @@ function BookingPanel({ id, rows, courseId, canManage, onChanged, onClose }: {
               return post(`/api/bookings/${id}/move`, r.teeTimeId ? { teeTimeId: r.teeTimeId } : { courseId, startsAt: r.startsAt });
             })}>Valider</button>
           </div>
-          <button className="btn danger" disabled={busy} onClick={() => {
-            const reason = prompt('Motif de l\'annulation ?');
-            if (reason !== null) run(() => post(`/api/bookings/${id}/cancel`, { reason: reason || null }), false);
-          }}>Annuler la réservation</button>
+          <CancelControl bookingId={id} onCancelled={() => onChanged(id)} />
         </>
       )}
       <ErrorBox error={error} />
@@ -467,5 +469,7 @@ function BookingPanel({ id, rows, courseId, canManage, onChanged, onClose }: {
 const HISTORY_LABEL: Record<string, string> = {
   'booking.created': 'Création', 'booking.updated': 'Modification', 'booking.moved': 'Déplacement / réunion',
   'booking.cancelled': 'Annulation', 'allocation.units_assigned': 'Matériel attribué',
+  'payment.recorded': 'Encaissement', 'refund.recorded': 'Remboursement', 'payment.confirmed': 'Paiement confirmé',
+  'payment.failed': 'Paiement échoué',
 };
 

@@ -89,6 +89,8 @@ en compilant avec `VITE_DEMO=false`.
 | `modules/auth` | Comptes, sessions, rôles et permissions par golf |
 | `modules/starter` | Vue starter, attribution nominative du caddie et du matériel |
 | `modules/customers` | Golfeurs visibles par le personnel d'un golf |
+| `modules/orders` | Commandes, encaissements, remboursements, statut de paiement |
+| `modules/pos-sync` · `integrations/pos` | File de synchronisation caisse et contrat des connecteurs (voir `docs/POS.md`) |
 | `modules/resources` | Capacité, verrouillage, allocation et libération des caddies et du matériel |
 | `http/` | Contrôleurs Fastify : validation des entrées, traduction des erreurs métier en HTTP |
 | `db/` | Pool, migrations SQL versionnées, données de démonstration |
@@ -158,6 +160,11 @@ est stockée, mots de passe hachés avec scrypt).
 | PUT | `/api/tee-times/:id/caddie` | starter | Nommer le caddie d'un départ |
 | PUT | `/api/allocations/:id/units` | starter | Attribuer voiturette / sac n° |
 | GET | `/api/clubs/:clubId/audit` | direction | Historique du golf |
+| GET | `/api/bookings/:id/order` | propriétaire / personnel | Commande, paiements, solde |
+| POST | `/api/bookings/:id/payments` · `/refunds` | réception | Encaissement / remboursement constaté au golf |
+| GET | `/api/bookings/:id/cancellation-preview` | propriétaire / personnel | Frais d'annulation applicables |
+| POST | `/api/me/bookings/:id/cancel` | client | Annulation en ligne (délai gratuit) |
+| GET · POST | `/api/clubs/:clubId/pos/jobs` · `/pos/jobs/:id/retry` · `/pos/process` | direction | Supervision de la synchronisation caisse |
 | GET · PATCH | `/api/clubs/:clubId/config` | direction | Configuration complète / paramètres du golf |
 | POST · PATCH | `/api/clubs/:clubId/config/:entity[/:id]` | direction | `courses`, `schedule-rules`, `tariffs`, `resource-types`, `caddies`, `resource-units` |
 | PUT | `/api/clubs/:clubId/config/resource-types/:id/overrides/:date` | direction | Stock différent un jour donné |

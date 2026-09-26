@@ -43,6 +43,11 @@
 | Catégorie tarifaire (résident…) | Choisie par le personnel ; le client en ligne paie le tarif standard | `bookings.customer_category` |
 | Répartition du caddie partagé | Au prorata des joueurs, en dirhams entiers (1+1+1 → 67 + 67 + 66) | `clubs.caddie_fee_split` |
 | Réunion / déplacement | Prix recalculés à l'heure du nouveau départ, pour toutes les réservations des deux départs | `modules/pricing` |
+| Politique d'annulation | Gratuite jusqu'à 24 h avant le départ, 0 % de frais ensuite ; le personnel peut renoncer aux frais | `clubs.cancellation_free_hours`, `cancellation_fee_percent` |
+| Annulation par le client | En ligne, uniquement dans le délai gratuit ; sinon il contacte le golf | `clubs.customer_can_cancel` |
+| Paiement en ligne | Désactivé (règlement au golf) en attendant le choix d'un prestataire | `clubs.online_payment` |
+| Encaissement au golf | Saisi par la réception (espèces, TPE, virement), confirmé par cette saisie ; plafonné au reste dû | `modules/orders` |
+| Caisse (POS) | Aucune par défaut ; G1 de démonstration sur l'adaptateur `local` | `clubs.pos_provider`, `docs/POS.md` |
 | Golfeur déjà client d'un autre golf du groupe | Invisible pour la réception : une nouvelle fiche est créée | `modules/customers` |
 
 ## En attente de décision
@@ -51,7 +56,8 @@
 2. Tarifs réels par golf ; supplément départ privé (forfait ou places non vendues ?) ;
    voiturette par véhicule ou par joueur.
 3. Taux de TVA réellement applicables et affichage TTC.
-4. Paiement en ligne obligatoire, acompte, ou paiement sur place ?
-5. Politique d'annulation (délai, frais, remboursement).
+4. Paiement en ligne : obligatoire, proposé ou non ? Quel prestataire (CMI…) ?
+5. Politique d'annulation réelle (délai, % de frais).
+8. Fournisseur de caisse (POS) : voir la liste des questions dans `docs/POS.md`.
 6. Départs 9 trous : départ du trou 1 uniquement, ou aussi du 10 (croisements) ?
 7. Noms réels des 4 golfs, parcours (18 trous ? 9 trous ?), horaires.

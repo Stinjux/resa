@@ -4,7 +4,7 @@ import { addDays, money, todayIn } from '../format';
 import { EntityForm, weekdaysLabel, type Field } from './EntityForm';
 import { ErrorBox, useClubs } from './common';
 
-type Tab = 'general' | 'schedule' | 'tariffs' | 'resources';
+type Tab = 'general' | 'schedule' | 'tariffs' | 'resources' | 'pos';
 
 export function Config({ user }: { user: User }) {
   const clubs = useClubs(user, ['org_admin', 'club_admin']);
@@ -35,7 +35,7 @@ export function Config({ user }: { user: User }) {
             {clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
         )}
         <nav className="nav">
-          {([['general', 'Général'], ['schedule', 'Parcours & horaires'], ['tariffs', 'Tarifs'], ['resources', 'Caddies & matériel']] as Array<[Tab, string]>)
+          {([['general', 'Général'], ['schedule', 'Parcours & horaires'], ['tariffs', 'Tarifs'], ['resources', 'Caddies & matériel'], ['pos', 'Caisse (POS)']] as Array<[Tab, string]>)
             .map(([t, l]) => <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{l}</button>)}
         </nav>
       </div>
@@ -44,6 +44,7 @@ export function Config({ user }: { user: User }) {
       {cfg && tab === 'schedule' && <Schedule cfg={cfg} base={base} save={save} />}
       {cfg && tab === 'tariffs' && <Tariffs cfg={cfg} save={save} />}
       {cfg && tab === 'resources' && <Resources cfg={cfg} base={base} save={save} reload={load} />}
+      {cfg && tab === 'pos' && <PosSync clubId={clubId!} posProvider={cfg.club.posProvider} />}
     </div>
   );
 }
@@ -67,6 +68,12 @@ function General({ cfg, onSave }: { cfg: any; onSave: (v: Record<string, unknown
     { key: 'defaultCaddiePayment', label: 'Paiement du caddie par défaut', type: 'select', options: [['on_site', 'Sur place'], ['with_booking', 'Avec la réservation']] },
     { key: 'caddieFeeSplit', label: 'Caddie d\'un départ partagé', type: 'select', options: [
       ['pro_rata_players', 'Réparti au prorata des joueurs'], ['equal', 'Réparti à parts égales'], ['first_booking', 'Payé par la 1re réservation']] },
+    { key: 'cancellationFreeHours', label: 'Annulation gratuite jusqu\'à (heures avant)', type: 'number' },
+    { key: 'cancellationFeePercent', label: 'Frais d\'annulation tardive (%)', type: 'number' },
+    { key: 'customerCanCancel', label: 'Le client peut annuler en ligne (dans le délai gratuit)', type: 'checkbox' },
+    { key: 'onlinePayment', label: 'Paiement en ligne', type: 'select', options: [['none', 'Non (règlement au golf)'], ['optional', 'Proposé'], ['required', 'Obligatoire']],
+      hint: 'Nécessite un prestataire de paiement (non encore branché)' },
+    { key: 'posProvider', label: 'Caisse (POS)', type: 'select', options: [['', 'Aucune'], ...(cfg.posProviders ?? []).map((p: string) => [p, p === 'local' ? 'local (démonstration)' : p] as [string, string])] },
   ];
   return (
     <div className="card stack" style={{ maxWidth: 900 }}>
@@ -338,5 +345,75 @@ function Units({ cfg, save }: { cfg: any; save: Save }) {
       columns={['N°', 'Type', 'État']}
       render={(u) => [<strong>{u.label}</strong>, typeName(u.resourceTypeId),
         u.status === 'available' ? 'disponible' : u.status === 'maintenance' ? <span className="badge warn">maintenance</span> : 'retiré']} />
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+const JOB_STATUS: Record<string, [string, string]> = {
+  pending: ['en attente', 'badge'], processing: ['en cours', 'badge'], succeeded: ['synchronisé', 'badge ok'],
+  superseded: ['remplacé', 'badge'], failed: ['nouvel essai prévu', 'badge warn'], dead: ['en échec', 'badge private'],
+};
+const OPERATION: Record<string, string> = { upsert_sale: 'Vente', record_payment: 'Paiement', record_refund: 'Remboursement' };
+
+function PosSync({ clubId, posProvider }: { clubId: string; posProvider: string | null }) {
+  const [data, setData] = useState<any>(null);
+  const [filter, setFilter] = useState('');
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const load = () => get(`/api/clubs/${clubId}/pos/jobs${filter ? `?status=${filter}` : ''}`).then(setData).catch((e) => setError(e.message));
+  useEffect(() => { load(); }, [clubId, filter]);
+
+  async function act(fn: () => Promise<any>, ok: (r: any) => string) {
+    setError(null);
+    try { setMessage(ok(await fn())); load(); } catch (e) { setError((e as Error).message); }
+  }
+
+  return (
+    <div className="stack">
+      <div className="card stack">
+        <h2>Synchronisation avec la caisse</h2>
+        <p className="small muted" style={{ margin: 0 }}>
+          {posProvider
+            ? <>Connecteur actif : <strong>{posProvider}</strong>. Chaque vente, paiement et remboursement est mis en file puis envoyé automatiquement (toutes les 30 s), avec reprises en cas d'erreur et sans doublon.</>
+            : <>Aucune caisse configurée (onglet Général). Les commandes sont gérées dans Resa ; rien n'est envoyé.</>}
+        </p>
+        {data && (
+          <div className="row small">
+            {Object.entries(JOB_STATUS).map(([k, [label, cls]]) => (
+              <button key={k} className={`btn sm ${filter === k ? 'primary' : ''}`} onClick={() => setFilter(filter === k ? '' : k)}>
+                <span className={cls}>{label}</span> {data.counts[k] ?? 0}
+              </button>
+            ))}
+            <span className="spacer" />
+            <button className="btn sm" onClick={() => act(() => post(`/api/clubs/${clubId}/pos/process`),
+              (r) => `${r.processed} traité(s) : ${r.succeeded} synchronisé(s), ${r.failed} à réessayer, ${r.dead} en échec.`)}>Synchroniser maintenant</button>
+          </div>
+        )}
+        {message && <div className="alert ok">{message}</div>}
+        <ErrorBox error={error} />
+      </div>
+      <div className="card table-wrap">
+        <table className="sheet">
+          <thead><tr><th>Date</th><th>Opération</th><th>Réservation</th><th>État</th><th>Essais</th><th>Détail</th><th /></tr></thead>
+          <tbody>
+            {data?.jobs.map((j: any) => (
+              <tr key={j.id}>
+                <td className="small">{new Date(j.createdAt).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}</td>
+                <td>{OPERATION[j.operation]}{j.operation === 'upsert_sale' && <span className="small muted"> v{j.entityVersion}</span>}</td>
+                <td>{j.reference}</td>
+                <td><span className={JOB_STATUS[j.status]?.[1]}>{JOB_STATUS[j.status]?.[0] ?? j.status}</span></td>
+                <td>{j.attempts}/{j.maxAttempts}</td>
+                <td className="small">{j.lastError ? <span style={{ color: 'var(--danger)' }}>{j.lastError}</span> : j.externalId ?? ''}</td>
+                <td>{['failed', 'dead'].includes(j.status) && (
+                  <button className="btn sm" onClick={() => act(() => post(`/api/clubs/${clubId}/pos/jobs/${j.id}/retry`), () => 'Relancé.')}>Relancer</button>
+                )}</td>
+              </tr>
+            ))}
+            {data?.jobs.length === 0 && <tr><td colSpan={7} className="muted">Aucune opération.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }

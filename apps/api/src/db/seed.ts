@@ -10,6 +10,7 @@ import { loadConfig } from '../config.js';
 import { createPool, withTransaction, type Db } from './pool.js';
 import { createStaffUser, registerCustomer } from '../modules/auth/service.js';
 import { createBooking, createGroupBooking, moveBooking } from '../modules/booking/service.js';
+import { recordStaffPayment } from '../modules/orders/service.js';
 import { assignCaddie, assignUnits } from '../modules/starter/service.js';
 import { getAvailability } from '../modules/teesheet/service.js';
 
@@ -173,7 +174,7 @@ async function seedBookings(db: Db, club: { id: string; courseId: string }) {
   });
   await moveBooking(deps, b.booking.id, { teeTimeId: a.booking.teeTime.id }, { actor });
   // 3. Départ privé, 3 joueurs.
-  await createBooking(deps, { ...staff, customer: { firstName: 'Nadia', lastName: 'Benjelloun', phone: '+212622222222' } }, {
+  const privateBooking = await createBooking(deps, { ...staff, customer: { firstName: 'Nadia', lastName: 'Benjelloun', phone: '+212622222222' } }, {
     courseId: club.courseId, startsAt: pick(d1, '09:00'), players: 3, holes: 18, isPrivate: true,
     options: [{ code: 'CART', quantity: 2 }],
   });
@@ -199,6 +200,11 @@ async function seedBookings(db: Db, club: { id: string; courseId: string }) {
     [a.booking.id],
   );
   await assignUnits(db, cart.rows[0].id, [cart.rows[0].unit], actor);
+
+  // 7. Règlements : John Smith a tout payé par carte ; Nadia Benjelloun a versé un acompte en espèces.
+  const due = async (id: string) => (await db.query('SELECT total_minor FROM orders WHERE booking_id = $1', [id])).rows[0].total_minor;
+  await recordStaffPayment(db, b.booking.id, { amountMinor: await due(b.booking.id), method: 'card_terminal', note: 'Payé à la réservation' }, actor);
+  await recordStaffPayment(db, privateBooking.booking.id, { amountMinor: 200000, method: 'cash', note: 'Acompte' }, actor);
 }
 
 export async function seedDemo(db: Db): Promise<boolean> {
@@ -206,6 +212,8 @@ export async function seedDemo(db: Db): Promise<boolean> {
   if (existing.rowCount) return false;
   const { orgId, clubs } = await seedConfig(db);
   await seedUsers(db, orgId, clubs);
+  // G1 : adaptateur de caisse local, pour voir la synchronisation fonctionner.
+  await db.query(`UPDATE clubs SET pos_provider = 'local' WHERE id = $1`, [clubs[0]!.id]);
   await seedBookings(db, clubs[0]!);
   return true;
 }

@@ -6,6 +6,7 @@ import { generateDaySlots } from '../../domain/schedule.js';
 import { available, usagePeriod } from '../../domain/resource-usage.js';
 import { remainingSeats, type Holes, type TeeTimeState } from '../../domain/tee-time-rules.js';
 import { DomainError } from '../../shared/errors.js';
+import { paymentStatusOf, type PaymentStatus } from '../orders/service.js';
 import { instantToLocal, isoWeekday, isValidIsoDate, localToInstant } from '../../shared/time.js';
 import {
   getClub,
@@ -88,6 +89,10 @@ interface BookingRow {
   customerPhone: string | null;
   customerEmail: string | null;
   notes: string | null;
+  orderTotalMinor: number | null;
+  paidMinor: number | null;
+  paymentStatus?: PaymentStatus;
+  balanceMinor?: number;
 }
 
 async function loadDay(q: Queryable, courseId: string, date: string) {
@@ -108,7 +113,11 @@ async function loadDay(q: Queryable, courseId: string, date: string) {
                   b.is_private AS "isPrivate", b.channel, b.group_id AS "groupId",
                   b.customer_id AS "customerId",
                   NULLIF(concat_ws(' ', cu.first_name, cu.last_name), '') AS "customerName",
-                  cu.phone AS "customerPhone", cu.email AS "customerEmail", b.notes
+                  cu.phone AS "customerPhone", cu.email AS "customerEmail", b.notes,
+                  (SELECT o.total_minor FROM orders o WHERE o.booking_id = b.id) AS "orderTotalMinor",
+                  (SELECT coalesce((SELECT sum(amount_minor) FROM payments WHERE order_id = o.id AND status = 'confirmed'), 0)
+                        - coalesce((SELECT sum(amount_minor) FROM refunds WHERE order_id = o.id AND status = 'confirmed'), 0)
+                     FROM orders o WHERE o.booking_id = b.id)::int AS "paidMinor"
              FROM bookings b LEFT JOIN customers cu ON cu.id = b.customer_id
             WHERE b.tee_time_id = ANY($1) AND b.status = 'confirmed'
             ORDER BY b.created_at`,
@@ -185,6 +194,8 @@ export async function getTeeSheet(q: Queryable, courseId: string, date: string):
       .filter((b) => b.teeTimeId === tt.id)
       .map((b) => ({
         ...b,
+        paymentStatus: paymentStatusOf(b.orderTotalMinor ?? 0, b.paidMinor ?? 0),
+        balanceMinor: (b.orderTotalMinor ?? 0) - (b.paidMinor ?? 0),
         resources: allocations
           .filter((a) => a.bookingId === b.id)
           .map((a) => ({ resourceTypeId: a.resourceTypeId, code: a.code, name: a.name, quantity: a.quantity })),

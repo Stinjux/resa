@@ -20,6 +20,11 @@ export interface Club {
   taxRateBp: number;
   defaultCaddiePayment: 'on_site' | 'with_booking';
   caddieFeeSplit: 'pro_rata_players' | 'equal' | 'first_booking';
+  cancellationFreeHours: number;
+  cancellationFeePercent: number;
+  customerCanCancel: boolean;
+  onlinePayment: 'none' | 'optional' | 'required';
+  posProvider: string | null;
 }
 
 export interface Course {
@@ -56,7 +61,9 @@ const CLUB_COLUMNS = `id, organization_id AS "organizationId", code, name, timez
   default_locale AS "defaultLocale", prices_include_tax AS "pricesIncludeTax",
   booking_horizon_days AS "bookingHorizonDays", min_lead_minutes AS "minLeadMinutes",
   tax_rate_bp AS "taxRateBp", default_caddie_payment AS "defaultCaddiePayment",
-  caddie_fee_split AS "caddieFeeSplit"`;
+  caddie_fee_split AS "caddieFeeSplit", cancellation_free_hours AS "cancellationFreeHours",
+  cancellation_fee_percent AS "cancellationFeePercent", customer_can_cancel AS "customerCanCancel",
+  online_payment AS "onlinePayment", pos_provider AS "posProvider"`;
 
 const COURSE_COLUMNS = `id, club_id AS "clubId", code, name, allowed_holes AS "allowedHoles",
   default_interval_minutes AS "defaultIntervalMinutes", default_max_players AS "defaultMaxPlayers",

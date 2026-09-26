@@ -4,6 +4,8 @@ import { migrate } from './db/migrate.js';
 import { createPool, type Db } from './db/pool.js';
 import { seedDemo } from './db/seed.js';
 import { buildServer } from './http/server.js';
+import { createPosRegistry } from './integrations/pos/registry.js';
+import { processPosJobs } from './modules/pos-sync/service.js';
 
 const config = loadConfig();
 const db = createPool(config.databaseUrl);
@@ -33,7 +35,25 @@ if (process.env.SEED_DEMO === '1' && process.env.NODE_ENV !== 'production') {
 }
 
 const webRoot = process.env.WEB_ROOT ?? fileURLToPath(new URL('../../web/dist', import.meta.url));
-const app = buildServer({ db, now: () => new Date() }, { logger: true, webRoot });
+const posRegistry = createPosRegistry();
+const app = buildServer({ db, now: () => new Date(), posRegistry }, { logger: true, webRoot });
+
+// Synchronisation POS en arrière-plan (désactivable : POS_WORKER=0).
+if (process.env.POS_WORKER !== '0') {
+  let running = false;
+  setInterval(async () => {
+    if (running) return;
+    running = true;
+    try {
+      const r = await processPosJobs(db, posRegistry);
+      if (r.processed) app.log.info({ pos: r }, 'Synchronisation POS');
+    } catch (err) {
+      app.log.error(err, 'Synchronisation POS');
+    } finally {
+      running = false;
+    }
+  }, Number(process.env.POS_WORKER_INTERVAL_MS ?? 30_000)).unref();
+}
 
 app.listen({ host: config.host, port: config.port }).then(() => {
   console.log(`\n  ⛳ Resa Golf prêt : http://localhost:${config.port}\n`);
