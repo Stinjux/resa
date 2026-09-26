@@ -6,11 +6,13 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import type { Db } from '../db/pool.js';
 import { createPosRegistry, type PosRegistry } from '../integrations/pos/registry.js';
 import type { AiModel } from '../modules/ai/model.js';
+import { createMessagingRegistry, type MessagingRegistry } from '../integrations/messaging/registry.js';
 import { registerAuth } from './auth.js';
 import { errorHandler } from './errors.js';
 import { authRoutes } from './routes/auth.js';
 import { aiRoutes } from './routes/ai.js';
 import { configRoutes } from './routes/config.js';
+import { messagingRoutes } from './routes/messaging.js';
 import { orderRoutes } from './routes/orders.js';
 import { staffRoutes } from './routes/staff.js';
 import { bookingRoutes } from './routes/bookings.js';
@@ -23,6 +25,7 @@ export interface AppDeps {
   posRegistry: PosRegistry;
   /** Modèle d'IA ; null si aucune clé n'est configurée. */
   ai: AiModel | null;
+  messaging: MessagingRegistry;
 }
 
 /** webRoot : dossier de l'interface compilée (apps/web/dist), servie sur « / ». */
@@ -35,8 +38,9 @@ export interface ServerOptions {
   loginRateLimit?: number;
 }
 
-export function buildServer(input: Omit<AppDeps, 'posRegistry' | 'ai'> & { posRegistry?: PosRegistry; ai?: AiModel | null }, opts: ServerOptions = {}): FastifyInstance {
-  const deps: AppDeps = { ...input, posRegistry: input.posRegistry ?? createPosRegistry(), ai: input.ai ?? null };
+export function buildServer(input: Omit<AppDeps, 'posRegistry' | 'ai' | 'messaging'> & { posRegistry?: PosRegistry; ai?: AiModel | null; messaging?: MessagingRegistry }, opts: ServerOptions = {}): FastifyInstance {
+  const deps: AppDeps = { ...input, posRegistry: input.posRegistry ?? createPosRegistry(), ai: input.ai ?? null,
+    messaging: input.messaging ?? createMessagingRegistry() };
   const app = Fastify({ logger: opts.logger ?? false, trustProxy: opts.trustProxy ?? false });
   // En-têtes de sécurité (CSP : tout est servi par nos soins ; styles en ligne de React autorisés).
   app.register(fastifyHelmet, {
@@ -68,6 +72,7 @@ export function buildServer(input: Omit<AppDeps, 'posRegistry' | 'ai'> & { posRe
     configRoutes(api, deps);
     orderRoutes(api, deps);
     aiRoutes(api, deps);
+    messagingRoutes(api, deps);
   });
 
   if (opts.webRoot && existsSync(opts.webRoot)) {

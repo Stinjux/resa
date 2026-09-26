@@ -83,6 +83,8 @@ Servie par le serveur de l'API une fois compilée (`npm start`) :
 - **Assistant IA** (personnel) : réserver en langage naturel (« book moi 2 départs à 13h le 25 mars »),
   l'IA demande ce qui manque puis prépare un brouillon que l'employé confirme ; questions directes
 - **Rapports** (direction) : chiffres de la période + analyse rédigée par l'IA
+- **Demandes WhatsApp / SMS** : l'IA échange avec le client, puis **chaque demande est validée par la
+  réception ou la direction** avant réservation ; confirmation envoyée au client (voir `docs/MESSAGERIE.md`)
 - Interface client en **français, anglais et arabe** (sélecteur de langue en haut à droite)
 - **Configuration** (direction, administrateur) : paramètres du golf, parcours, horaires,
   exceptions et fermetures avec aperçu de la grille, tarifs, stocks et exceptions par jour,

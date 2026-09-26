@@ -5,13 +5,14 @@ import { LocaleSwitcher, useI18n } from './i18n';
 import { BookingFlow } from './pages/BookingFlow';
 import { Assistant } from './pages/Assistant';
 import { Config } from './pages/Config';
+import { Inbox } from './pages/Inbox';
 import { Reports } from './pages/Reports';
 import { Login } from './pages/Login';
 import { MyBookings } from './pages/MyBookings';
 import { StarterBoard } from './pages/StarterBoard';
 import { TeeSheet } from './pages/TeeSheet';
 
-type Page = 'book' | 'sheet' | 'starter' | 'mine' | 'config' | 'assistant' | 'reports' | 'login';
+type Page = 'book' | 'sheet' | 'starter' | 'mine' | 'config' | 'assistant' | 'reports' | 'inbox' | 'login';
 
 export function hasRole(user: User | null, roles: string[]): boolean {
   return !!user?.roles.some((r) => roles.includes(r.role));
@@ -22,6 +23,10 @@ export function App() {
   const [page, setPage] = useState<Page>('book');
   const [ready, setReady] = useState(false);
   const { t } = useI18n();
+  const [pending, setPending] = useState(0);
+  const canValidate = hasRole(user, ['org_admin', 'club_admin', 'receptionist']);
+  const refreshPending = () => { if (canValidate) get<{ count: number }>('/api/booking-requests/pending-count').then((r) => setPending(r.count)).catch(() => undefined); };
+  useEffect(() => { refreshPending(); const id = setInterval(refreshPending, 30_000); return () => clearInterval(id); }, [user]);
 
   useEffect(() => {
     if (!getToken()) return setReady(true);
@@ -50,6 +55,7 @@ export function App() {
   const tabs: Array<[Page, string, boolean]> = [
     ['sheet', t('nav.sheet'), canSheet],
     ['starter', t('nav.starter'), canStarter],
+    ['inbox', pending ? `Demandes (${pending})` : 'Demandes', canValidate],
     ['assistant', 'Assistant IA', canSheet],
     ['reports', 'Rapports', hasRole(user, ['org_admin', 'club_admin'])],
     ['config', t('nav.config'), hasRole(user, ['org_admin', 'club_admin'])],
@@ -89,6 +95,7 @@ export function App() {
         {page === 'mine' && user && <MyBookings />}
         {page === 'config' && user && <Config user={user} />}
         {page === 'assistant' && user && <Assistant />}
+        {page === 'inbox' && user && <Inbox user={user} onChanged={refreshPending} />}
         {page === 'reports' && user && <Reports user={user} />}
       </main>
     </>

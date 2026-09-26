@@ -25,6 +25,8 @@ export interface Club {
   customerCanCancel: boolean;
   onlinePayment: 'none' | 'optional' | 'required';
   posProvider: string | null;
+  countryCode: string | null;
+  messagingProvider: string | null;
 }
 
 export interface Course {
@@ -63,7 +65,8 @@ const CLUB_COLUMNS = `id, organization_id AS "organizationId", code, name, timez
   tax_rate_bp AS "taxRateBp", default_caddie_payment AS "defaultCaddiePayment",
   caddie_fee_split AS "caddieFeeSplit", cancellation_free_hours AS "cancellationFreeHours",
   cancellation_fee_percent AS "cancellationFeePercent", customer_can_cancel AS "customerCanCancel",
-  online_payment AS "onlinePayment", pos_provider AS "posProvider"`;
+  online_payment AS "onlinePayment", pos_provider AS "posProvider",
+  country_code AS "countryCode", messaging_provider AS "messagingProvider"`;
 
 const COURSE_COLUMNS = `id, club_id AS "clubId", code, name, allowed_holes AS "allowedHoles",
   default_interval_minutes AS "defaultIntervalMinutes", default_max_players AS "defaultMaxPlayers",

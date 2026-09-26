@@ -6,6 +6,8 @@ import { seedDemo } from './db/seed.js';
 import { buildServer } from './http/server.js';
 import { createPosRegistry } from './integrations/pos/registry.js';
 import { modelFromEnv } from './modules/ai/model.js';
+import { createMessagingRegistry } from './integrations/messaging/registry.js';
+import { processMessagingQueue } from './modules/messaging/service.js';
 import { processPosJobs } from './modules/pos-sync/service.js';
 
 const config = loadConfig();
@@ -40,7 +42,24 @@ if (process.env.SEED_DEMO === '1' && process.env.NODE_ENV === 'production') {
 const webRoot = process.env.WEB_ROOT ?? fileURLToPath(new URL('../../web/dist', import.meta.url));
 const posRegistry = createPosRegistry();
 const ai = modelFromEnv();
-const app = buildServer({ db, now: () => new Date(), posRegistry, ai }, { logger: true, webRoot, trustProxy: process.env.TRUST_PROXY === '1' });
+const messaging = createMessagingRegistry();
+const app = buildServer({ db, now: () => new Date(), posRegistry, ai, messaging }, { logger: true, webRoot, trustProxy: process.env.TRUST_PROXY === '1' });
+
+// Messagerie : réponses de l'IA aux messages reçus et envois (toutes les 5 s).
+{
+  let busy = false;
+  setInterval(async () => {
+    if (busy) return;
+    busy = true;
+    try {
+      await processMessagingQueue({ db, now: () => new Date(), ai, messaging });
+    } catch (err) {
+      app.log.error(err, 'Messagerie');
+    } finally {
+      busy = false;
+    }
+  }, Number(process.env.MESSAGING_WORKER_INTERVAL_MS ?? 5_000)).unref();
+}
 
 // Nettoyage des sessions expirées (toutes les heures).
 setInterval(() => {

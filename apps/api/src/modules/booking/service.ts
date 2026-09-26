@@ -42,7 +42,7 @@ import { recomputeTeeTimeCharges } from '../pricing/service.js';
 import { caddieTypes, computeGrid, type GridSlot } from '../teesheet/service.js';
 import type { Payable } from '../../domain/pricing.js';
 
-export type Channel = 'web' | 'phone' | 'group' | 'walk_in' | 'staff';
+export type Channel = 'web' | 'phone' | 'group' | 'walk_in' | 'staff' | 'whatsapp' | 'sms';
 
 export interface OptionRequest {
   resourceTypeId?: string;

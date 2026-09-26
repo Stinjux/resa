@@ -103,6 +103,8 @@ function General({ cfg, onSave }: { cfg: any; onSave: (v: Record<string, unknown
     { key: 'customerCanCancel', label: 'Le client peut annuler en ligne (dans le délai gratuit)', type: 'checkbox' },
     { key: 'onlinePayment', label: 'Paiement en ligne', type: 'select', options: [['none', 'Non (règlement au golf)'], ['optional', 'Proposé'], ['required', 'Obligatoire']],
       hint: 'Nécessite un prestataire de paiement (non encore branché)' },
+    { key: 'messagingProvider', label: 'Messagerie WhatsApp / SMS', type: 'select', options: [['', 'Aucune'], ...(cfg.messagingProviders ?? []).map((p: string) => [p, p === 'local' ? 'local (simulateur)' : p] as [string, string])],
+      hint: 'Les demandes reçues doivent être validées par la réception ou la direction' },
     { key: 'posProvider', label: 'Caisse (POS)', type: 'select', options: [['', 'Aucune'], ...(cfg.posProviders ?? []).map((p: string) => [p, p === 'local' ? 'local (démonstration)' : p] as [string, string])] },
   ];
   return (

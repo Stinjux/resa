@@ -13,6 +13,9 @@ import { createBooking, createGroupBooking, moveBooking } from '../modules/booki
 import { recordStaffPayment } from '../modules/orders/service.js';
 import { assignCaddie, assignUnits } from '../modules/starter/service.js';
 import { getAvailability } from '../modules/teesheet/service.js';
+import { getClub, getCourse } from '../modules/catalog/repository.js';
+import { receiveInbound } from '../modules/messaging/service.js';
+import { quoteNewBooking } from '../modules/pricing/service.js';
 
 export const DEMO_PASSWORD = 'Demo2026!';
 
@@ -207,14 +210,39 @@ async function seedBookings(db: Db, club: { id: string; courseId: string }) {
   await recordStaffPayment(db, privateBooking.booking.id, { amountMinor: 200000, method: 'cash', note: 'Acompte' }, actor);
 }
 
+/** Une demande WhatsApp en attente de validation (comme si l'IA l'avait préparée). */
+async function seedWhatsAppRequest(db: Db, club: { id: string; courseId: string }) {
+  const tomorrow = DateTime.now().setZone('Africa/Casablanca').plus({ days: 1 }).toISODate()!;
+  const { slots } = await getAvailability(db, { courseId: club.courseId, date: tomorrow, players: 3, holes: 18, now: new Date(), enforceBookingWindow: false });
+  const slot = slots.find((s) => s.localTime >= '11:00') ?? slots[0]!;
+  const { threadId } = await receiveInbound(db, club.id, 'local', {
+    channel: 'whatsapp', from: '0661234567', to: null, fromName: 'Mehdi Alaoui', text: 'Salam, 3 joueurs demain vers 11h en 18 trous svp. Mehdi Alaoui',
+    providerMessageId: 'seed-whatsapp-1', receivedAt: new Date(),
+  });
+  await db.query(`UPDATE messages SET status = 'processed' WHERE thread_id = $1`, [threadId]);
+  await db.query(`INSERT INTO messages (thread_id, direction, author, body, status) VALUES ($1, 'out', 'ai', $2, 'sent')`,
+    [threadId, `Merci Mehdi ! Un départ est libre à ${slot.localTime} pour 3 joueurs en 18 trous. Votre demande est transmise au golf pour validation.`]);
+  const clubRow = await getClub(db, club.id);
+  const course = await getCourse(db, club.courseId);
+  const q = await quoteNewBooking(db, { club: clubRow, course, startsAt: new Date(slot.startsAt), players: 3, holes: 18, isPrivate: false,
+    customerCategory: 'standard', caddiePayment: clubRow.defaultCaddiePayment, options: [] });
+  await db.query(`INSERT INTO booking_requests (club_id, thread_id, payload, summary) VALUES ($1, $2, $3, $4)`, [club.id, threadId,
+    { customer: { firstName: 'Mehdi', lastName: 'Alaoui' }, language: 'fr', notes: null,
+      items: [{ courseId: course.id, startsAt: slot.startsAt, players: 3, holes: 18 }] },
+    { club: clubRow.name, currency: clubRow.currency, customer: 'Mehdi Alaoui', channel: 'whatsapp', notes: null, totalMinor: q.totalMinor,
+      teeTimes: [{ course: course.name, date: tomorrow, time: slot.localTime, players: 3, holes: 18, totalMinor: q.totalMinor }] }]);
+  await db.query(`UPDATE message_threads SET locale = 'fr' WHERE id = $1`, [threadId]);
+}
+
 export async function seedDemo(db: Db): Promise<boolean> {
   const existing = await db.query(`SELECT 1 FROM organizations WHERE code = 'DEMO-MA'`);
   if (existing.rowCount) return false;
   const { orgId, clubs } = await seedConfig(db);
   await seedUsers(db, orgId, clubs);
   // G1 : adaptateur de caisse local, pour voir la synchronisation fonctionner.
-  await db.query(`UPDATE clubs SET pos_provider = 'local' WHERE id = $1`, [clubs[0]!.id]);
+  await db.query(`UPDATE clubs SET pos_provider = 'local', messaging_provider = 'local' WHERE id = $1`, [clubs[0]!.id]);
   await seedBookings(db, clubs[0]!);
+  await seedWhatsAppRequest(db, clubs[0]!);
   return true;
 }
 

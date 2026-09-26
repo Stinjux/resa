@@ -92,7 +92,7 @@ export function configRoutes(app: FastifyInstance, deps: AppDeps) {
 
   app.get('/api/clubs/:clubId/config', async (req) => {
     const club = await adminClub(req);
-    return { ...(await getClubConfig(deps.db, club.id)), posProviders: [...deps.posRegistry.keys()] };
+    return { ...(await getClubConfig(deps.db, club.id)), posProviders: [...deps.posRegistry.keys()], messagingProviders: [...deps.messaging.keys()] };
   });
 
   app.patch('/api/clubs/:clubId/config', async (req) => {
@@ -109,9 +109,10 @@ export function configRoutes(app: FastifyInstance, deps: AppDeps) {
       cancellationFreeHours: z.number().int().min(0).max(720), cancellationFeePercent: z.number().int().min(0).max(100),
       customerCanCancel: z.boolean(), onlinePayment: z.enum(['none', 'optional', 'required']),
       posProvider: z.string().nullable().refine((p) => p === null || deps.posRegistry.has(p), 'Connecteur POS non installé'),
+      messagingProvider: z.string().nullable().refine((p) => p === null || deps.messaging.has(p), 'Connecteur de messagerie non installé'),
     }).partial().strict().parse(req.body);
     await updateClubSettings(deps.db, club.id, patch, actorOf(req));
-    return { ...(await getClubConfig(deps.db, club.id)), posProviders: [...deps.posRegistry.keys()] };
+    return { ...(await getClubConfig(deps.db, club.id)), posProviders: [...deps.posRegistry.keys()], messagingProviders: [...deps.messaging.keys()] };
   });
 
   app.post('/api/clubs/:clubId/config/:entity', async (req, reply) => {

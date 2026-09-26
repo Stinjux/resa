@@ -30,6 +30,8 @@ Chaque étape livre un logiciel fonctionnel et testé.
 
 | 8 | **IA** : assistant de réservation en langage naturel (brouillon + confirmation humaine), questions directes, rapports d'activité rédigés par l'IA sur des chiffres calculés par Resa (voir `docs/IA.md`) | ✅ livré |
 
+| 9 | **WhatsApp / SMS** : demandes recueillies par l'IA, validation obligatoire par la réception ou la direction, confirmation au client, simulateur, contrat de connecteur (voir `docs/MESSAGERIE.md`) | ✅ livré (fournisseur à choisir) |
+
 ## Suites possibles
 
 - Paiement en ligne (prestataire à choisir, ex. CMI) et e-mails / SMS de confirmation.

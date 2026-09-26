@@ -23,6 +23,8 @@
 - **Réception** : ne voit que son golf et les golfeurs ayant réservé dans son golf.
 - **Starter** : départs du jour et des 6 jours suivants ; attribue le caddie
   nommé et le matériel numéroté ; ne voit pas les coordonnées des golfeurs.
+- **WhatsApp / SMS** : chaque demande reçue par message doit être validée par une
+  réceptionniste ou un directeur avant d'être réservée (décision du 26/09/2026).
 - Ordre de grandeur des tarifs : **~1 300 MAD le green fee 18 trous**.
 - Voiturettes (payantes), chariots, sacs de location (H/F × droitier/gaucher),
   gérés séparément par golf.
@@ -59,5 +61,6 @@
 4. Paiement en ligne : obligatoire, proposé ou non ? Quel prestataire (CMI…) ?
 5. Politique d'annulation réelle (délai, % de frais).
 8. Fournisseur de caisse (POS) : voir la liste des questions dans `docs/POS.md`.
+9. Fournisseur WhatsApp / SMS : voir `docs/MESSAGERIE.md`.
 6. Départs 9 trous : départ du trou 1 uniquement, ou aussi du 10 (croisements) ?
 7. Noms réels des 4 golfs, parcours (18 trous ? 9 trous ?), horaires.
