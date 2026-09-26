@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { assertCan } from '../../modules/auth/permissions.js';
 import { getClub, getCourse } from '../../modules/catalog/repository.js';
 import {
+  createClub,
   createEntity,
   ENTITIES,
   getClubConfig,
@@ -71,6 +72,23 @@ export function configRoutes(app: FastifyInstance, deps: AppDeps) {
     assertCan(req.principal, 'config.manage', club);
     return club;
   }
+
+  // Nouveau golf (administrateur du groupe uniquement).
+  app.post('/api/clubs', async (req, reply) => {
+    const p = req.principal;
+    if (!p) throw new DomainError('UNAUTHENTICATED', 'Connexion requise.');
+    if (!p.roles.some((r) => r.role === 'org_admin' && r.clubId === null)) {
+      throw new DomainError('FORBIDDEN', "Réservé à l'administrateur du groupe.");
+    }
+    const body = z.object({
+      code, name: z.string().min(1).max(100),
+      timezone: z.string().refine((tz) => { try { new Intl.DateTimeFormat('en', { timeZone: tz }); return true; } catch { return false; } }, 'Fuseau horaire IANA invalide'),
+      currency: z.string().regex(/^[A-Z]{3}$/), defaultLocale: z.string().min(2).max(10).default('fr'),
+      countryCode: z.string().regex(/^[A-Z]{2}$/).nullable().default(null), taxRateBp: z.number().int().min(0).max(10_000).default(0),
+    }).parse(req.body);
+    const id = await createClub(deps.db, p.organizationId, body, actorOf(req));
+    return reply.status(201).send({ id });
+  });
 
   app.get('/api/clubs/:clubId/config', async (req) => {
     const club = await adminClub(req);

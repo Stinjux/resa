@@ -30,13 +30,20 @@ if (process.env.AUTO_MIGRATE === '1') {
   if (applied.length) console.log(`Migrations appliquées : ${applied.join(', ')}`);
 }
 // SEED_DEMO=1 : charge la démo si elle est absente (jamais en production).
-if (process.env.SEED_DEMO === '1' && process.env.NODE_ENV !== 'production') {
+if (process.env.SEED_DEMO === '1' && process.env.NODE_ENV === 'production') {
+  console.warn('SEED_DEMO ignoré en production : les comptes de démonstration ne sont jamais créés.');
+} else if (process.env.SEED_DEMO === '1') {
   if (await seedDemo(db)) console.log('Données de démonstration chargées (mot de passe des comptes : Demo2026!).');
 }
 
 const webRoot = process.env.WEB_ROOT ?? fileURLToPath(new URL('../../web/dist', import.meta.url));
 const posRegistry = createPosRegistry();
-const app = buildServer({ db, now: () => new Date(), posRegistry }, { logger: true, webRoot });
+const app = buildServer({ db, now: () => new Date(), posRegistry }, { logger: true, webRoot, trustProxy: process.env.TRUST_PROXY === '1' });
+
+// Nettoyage des sessions expirées (toutes les heures).
+setInterval(() => {
+  db.query('DELETE FROM sessions WHERE expires_at < now()').catch((err) => app.log.error(err, 'Nettoyage des sessions'));
+}, 3_600_000).unref();
 
 // Synchronisation POS en arrière-plan (désactivable : POS_WORKER=0).
 if (process.env.POS_WORKER !== '0') {

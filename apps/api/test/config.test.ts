@@ -80,3 +80,21 @@ describe('configuration par golf', () => {
     expect((await call('POST', `/api/clubs/${f.clubId}/config/resource-units`, dir, { resourceTypeId: f.rt.CART, label: 'V-99' })).statusCode).toBe(422);
   });
 });
+
+describe('nouveau golf', () => {
+  it('seul l’administrateur du groupe peut créer un golf ; aucun tarif n’est inventé', async () => {
+    const a = await createClub(db);
+    const admin = await token(a, 'org_admin');
+    const dir = await token(a, 'club_admin');
+    const payload = { code: `NEW${n}${Date.now() % 100000}`, name: 'Golf de Lisbonne', timezone: 'Europe/Lisbon', currency: 'EUR', defaultLocale: 'en', countryCode: 'PT', taxRateBp: 2300 };
+    expect((await call('POST', '/api/clubs', dir, payload)).statusCode).toBe(403);
+    const res = await call('POST', '/api/clubs', admin, payload);
+    expect(res.statusCode).toBe(201);
+    const cfg = (await call('GET', `/api/clubs/${res.json().id}/config`, admin)).json();
+    expect(cfg.club).toMatchObject({ timezone: 'Europe/Lisbon', currency: 'EUR', taxRateBp: 2300 });
+    expect(cfg.courses).toHaveLength(1);
+    expect(cfg.tariffs).toHaveLength(0);
+    expect(cfg.resourceTypes.map((r: any) => r.kind)).toEqual(['caddie']);
+    expect((await call('POST', '/api/clubs', admin, payload)).statusCode).toBe(422); // code déjà pris
+  });
+});

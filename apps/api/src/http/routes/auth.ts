@@ -5,8 +5,17 @@ import { getBooking } from '../../modules/booking/service.js';
 import { DomainError } from '../../shared/errors.js';
 import type { AppDeps } from '../server.js';
 
+declare module 'fastify' {
+  interface FastifyInstance {
+    loginRateLimit: number;
+  }
+}
+
 export function authRoutes(app: FastifyInstance, deps: AppDeps) {
-  app.post('/api/auth/login', async (req) => {
+  // Protection contre les essais de mots de passe en série.
+  const strict = { config: { rateLimit: { max: app.loginRateLimit, timeWindow: '1 minute' } } };
+
+  app.post('/api/auth/login', strict, async (req) => {
     const body = z
       .object({ email: z.string().min(3).max(200), password: z.string().min(1).max(200), organizationCode: z.string().optional() })
       .parse(req.body);
@@ -19,10 +28,11 @@ export function authRoutes(app: FastifyInstance, deps: AppDeps) {
     return reply.status(204).send();
   });
 
-  app.post('/api/auth/register', async (req, reply) => {
+  app.post('/api/auth/register', strict, async (req, reply) => {
     const body = z
       .object({
-        organizationCode: z.string(),
+        organizationCode: z.string().optional(),
+        clubId: z.uuid().optional(), // inscription depuis la page d'un golf
         email: z.email(),
         password: z.string().min(8).max(200),
         firstName: z.string().max(120).nullable().optional(),
@@ -30,10 +40,12 @@ export function authRoutes(app: FastifyInstance, deps: AppDeps) {
         phone: z.string().max(40).nullable().optional(),
       })
       .parse(req.body);
-    const org = await deps.db.query('SELECT id FROM organizations WHERE code = $1', [body.organizationCode]);
+    const org = body.clubId
+      ? await deps.db.query('SELECT organization_id AS id FROM clubs WHERE id = $1 AND active', [body.clubId])
+      : await deps.db.query('SELECT id FROM organizations WHERE code = $1', [body.organizationCode ?? '']);
     if (!org.rows[0]) throw new DomainError('NOT_FOUND', 'Organisation introuvable.');
     await registerCustomer(deps.db, { ...body, organizationId: org.rows[0].id });
-    const session = await login(deps.db, { ...body }, deps.now());
+    const session = await login(deps.db, { email: body.email, password: body.password }, deps.now());
     return reply.status(201).send({ token: session.token, expiresAt: session.expiresAt, user: session.principal });
   });
 

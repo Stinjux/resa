@@ -38,6 +38,11 @@ npm start                                  # compile, crée les tables, charge l
 
 Puis ouvrez **http://localhost:3000**.
 
+### Mettre en ligne
+
+Voir [`docs/DEPLOIEMENT.md`](docs/DEPLOIEMENT.md) : un serveur, un nom de domaine,
+`docker compose -f docker-compose.prod.yml up -d`, HTTPS et sauvegardes automatiques.
+
 ### Comptes de démonstration
 
 Sur la page **Connexion**, un clic sur un compte suffit (mot de passe `Demo2026!`) :
@@ -69,7 +74,8 @@ Servie par le serveur de l'API une fois compilée (`npm start`) :
 - **Feuille de départs** (réception, direction) : journée par parcours, places, privé, caddie ;
   création téléphonique, groupe réparti sur des départs consécutifs, modification, réunion/déplacement, annulation, historique
 - **Starter** : aujourd'hui / demain / semaine, caddie nommé et matériel numéroté, montant à encaisser sur place
-- **Mes réservations** (client)
+- **Mes réservations** (client) : statut de paiement, annulation en ligne dans le délai gratuit
+- Interface client en **français, anglais et arabe** (sélecteur de langue en haut à droite)
 - **Configuration** (direction, administrateur) : paramètres du golf, parcours, horaires,
   exceptions et fermetures avec aperçu de la grille, tarifs, stocks et exceptions par jour,
   caddies et matériel numéroté. Chaque modification est historisée.

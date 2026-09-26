@@ -1,6 +1,8 @@
+import { currentIntl } from './i18n';
+
 export function money(minor: number | null | undefined, currency = 'MAD'): string {
   if (minor === null || minor === undefined) return '—';
-  return new Intl.NumberFormat('fr-MA', { style: 'currency', currency, maximumFractionDigits: 0 }).format(minor / 100);
+  return new Intl.NumberFormat(currentIntl(), { style: 'currency', currency, maximumFractionDigits: 0 }).format(minor / 100);
 }
 
 /** Date du jour dans le fuseau du golf (YYYY-MM-DD). */
@@ -16,7 +18,7 @@ export function addDays(date: string, n: number): string {
 }
 
 export function longDate(date: string): string {
-  return new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(
+  return new Intl.DateTimeFormat(currentIntl(), { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(
     new Date(`${date}T12:00:00Z`),
   );
 }

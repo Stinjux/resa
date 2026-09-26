@@ -20,6 +20,7 @@ services:
       db:
         condition: service_healthy
     environment:
+      NODE_ENV: development   # démo locale (en production : docker-compose.prod.yml)
       DATABASE_URL: postgres://resa:resa@db:5432/resa_dev
       AUTO_MIGRATE: "1"
       SEED_DEMO: "1"   # comptes et réservations de démonstration

@@ -198,3 +198,18 @@ describe('administration', () => {
     expect((await call('GET', `/api/clubs/${a.clubId}/audit`, rec)).statusCode).toBe(403);
   });
 });
+
+describe('sécurité', () => {
+  it('limite les tentatives de connexion et envoie les en-têtes de sécurité', async () => {
+    const strictApp = buildServer({ db, now: () => NOW }, { loginRateLimit: 3 });
+    const attempt = () => strictApp.inject({ method: 'POST', url: '/api/auth/login', payload: { email: 'x@test.ma', password: 'mauvais' } });
+    for (let i = 0; i < 3; i++) expect((await attempt()).statusCode).toBe(401);
+    const blocked = await attempt();
+    expect(blocked.statusCode).toBe(429);
+    expect(blocked.json().error.code).toBe('RATE_LIMITED');
+    const health = await strictApp.inject({ method: 'GET', url: '/health' });
+    expect(health.headers['content-security-policy']).toContain("default-src 'self'");
+    expect(health.headers['x-content-type-options']).toBe('nosniff');
+    await strictApp.close();
+  });
+});

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { get, type Club, type Course, type User } from '../api';
 
-export function useClubs(user: User | null, roles?: string[]) {
+export function useClubs(user: User | null, roles?: string[], version = 0) {
   const [clubs, setClubs] = useState<Club[]>([]);
   useEffect(() => {
     get<{ clubs: Club[] }>('/api/clubs').then((r) => {
@@ -10,7 +10,7 @@ export function useClubs(user: User | null, roles?: string[]) {
       const all = mine.some((x) => x.role === 'org_admin');
       setClubs(all ? r.clubs : r.clubs.filter((c) => mine.some((x) => x.clubId === c.id)));
     });
-  }, [user]);
+  }, [user, version]);
   return clubs;
 }
 

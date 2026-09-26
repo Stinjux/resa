@@ -1,0 +1,5 @@
+# HTTPS automatique (Let's Encrypt) pour le domaine défini dans DOMAIN.
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy app:3000
+}

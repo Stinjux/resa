@@ -1,4 +1,6 @@
 import { existsSync } from 'node:fs';
+import fastifyHelmet from '@fastify/helmet';
+import fastifyRateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { Db } from '../db/pool.js';
@@ -20,22 +22,48 @@ export interface AppDeps {
 }
 
 /** webRoot : dossier de l'interface compilée (apps/web/dist), servie sur « / ». */
-export function buildServer(input: Omit<AppDeps, 'posRegistry'> & { posRegistry?: PosRegistry }, opts: { logger?: boolean; webRoot?: string } = {}): FastifyInstance {
+export interface ServerOptions {
+  logger?: boolean;
+  webRoot?: string;
+  /** Derrière un proxy (Caddy, Nginx) : lire l'IP réelle dans X-Forwarded-For. */
+  trustProxy?: boolean;
+  /** Tentatives de connexion / inscription par minute et par IP. */
+  loginRateLimit?: number;
+}
+
+export function buildServer(input: Omit<AppDeps, 'posRegistry'> & { posRegistry?: PosRegistry }, opts: ServerOptions = {}): FastifyInstance {
   const deps: AppDeps = { ...input, posRegistry: input.posRegistry ?? createPosRegistry() };
-  const app = Fastify({ logger: opts.logger ?? false });
-  app.setErrorHandler(errorHandler);
-  registerAuth(app, deps);
-  app.get('/health', async () => {
-    await deps.db.query('SELECT 1');
-    return { ok: true };
+  const app = Fastify({ logger: opts.logger ?? false, trustProxy: opts.trustProxy ?? false });
+  // En-têtes de sécurité (CSP : tout est servi par nos soins ; styles en ligne de React autorisés).
+  app.register(fastifyHelmet, {
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"], scriptSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:'], connectSrc: ["'self'"], frameAncestors: ["'none'"], formAction: ["'self'"],
+        // Forcer le HTTPS seulement derrière le proxy HTTPS de production (sinon http://localhost casserait).
+        upgradeInsecureRequests: opts.trustProxy ? [] : null,
+      },
+    },
   });
-  catalogRoutes(app, deps);
-  teeSheetRoutes(app, deps);
-  bookingRoutes(app, deps);
-  authRoutes(app, deps);
-  staffRoutes(app, deps);
-  configRoutes(app, deps);
-  orderRoutes(app, deps);
+  // Limite générale par IP, plus stricte sur la connexion et l'inscription (voir routes/auth.ts).
+  app.register(fastifyRateLimit, { global: true, max: 600, timeWindow: '1 minute' });
+  app.decorate('loginRateLimit', opts.loginRateLimit ?? Number(process.env.LOGIN_RATE_LIMIT ?? 10));
+  app.setErrorHandler(errorHandler);
+  // Routes enregistrées APRÈS les extensions (sécurité, limitation) pour qu'elles s'y appliquent.
+  app.register(async (api) => {
+    registerAuth(api, deps);
+    api.get('/health', async () => {
+      await deps.db.query('SELECT 1');
+      return { ok: true };
+    });
+    catalogRoutes(api, deps);
+    teeSheetRoutes(api, deps);
+    bookingRoutes(api, deps);
+    authRoutes(api, deps);
+    staffRoutes(api, deps);
+    configRoutes(api, deps);
+    orderRoutes(api, deps);
+  });
 
   if (opts.webRoot && existsSync(opts.webRoot)) {
     app.register(fastifyStatic, { root: opts.webRoot });

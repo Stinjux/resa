@@ -235,3 +235,36 @@ export async function getClubConfig(q: Queryable, clubId: string) {
     resourceTypes: resourceTypes.rows, capacityOverrides: overrides.rows, caddies: caddies.rows, units: units.rows,
   };
 }
+
+/**
+ * Nouveau golf dans une organisation, avec le minimum pour démarrer : un
+ * parcours, une plage d'ouverture et le type « caddie » (quantité et prix à
+ * saisir). Aucun tarif n'est inventé : tant qu'aucun green fee n'est saisi,
+ * les réservations sont refusées (PRICE_NOT_CONFIGURED).
+ */
+export async function createClub(
+  db: Db,
+  organizationId: string,
+  input: { code: string; name: string; timezone: string; currency: string; defaultLocale: string; countryCode: string | null; taxRateBp: number },
+  actor: Actor,
+): Promise<string> {
+  return guard(() => withTransaction(db, async (tx) => {
+    const { rows: [club] } = await tx.query(
+      `INSERT INTO clubs (organization_id, code, name, timezone, currency, default_locale, country_code, tax_rate_bp)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      [organizationId, input.code, input.name, input.timezone, input.currency, input.defaultLocale, input.countryCode, input.taxRateBp],
+    );
+    await tx.query(`INSERT INTO courses (club_id, code, name) VALUES ($1, 'MAIN', 'Parcours principal')`, [club.id]);
+    await tx.query(
+      `INSERT INTO schedule_rules (club_id, name, kind, start_time, end_time) VALUES ($1, 'Ouverture quotidienne', 'open', '07:00', '17:00')`,
+      [club.id],
+    );
+    await tx.query(
+      `INSERT INTO resource_types (club_id, code, kind, name, scope, required_per_tee_time, total_quantity)
+       VALUES ($1, 'CADDIE', 'caddie', 'Caddie', 'tee_time', true, 0)`,
+      [club.id],
+    );
+    await audit(tx, { clubId: club.id, actor, action: 'config.club.created', entityType: 'club', entityId: club.id, data: input });
+    return club.id;
+  }));
+}

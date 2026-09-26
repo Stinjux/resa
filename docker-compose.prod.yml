@@ -1,0 +1,67 @@
+# Production : docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+# Voir docs/DEPLOIEMENT.md
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: resa
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant}
+      POSTGRES_DB: resa
+    volumes:
+      - resa-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U resa -d resa"]
+      interval: 5s
+      retries: 30
+
+  app:
+    build:
+      context: .
+      args:
+        VITE_DEMO: "false"
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://resa:${POSTGRES_PASSWORD}@db:5432/resa
+      AUTO_MIGRATE: "1"
+      TRUST_PROXY: "1"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [app]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN manquant}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+  # Sauvegarde quotidienne de la base, conservée 14 jours dans ./backups
+  backup:
+    image: postgres:16
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./backups:/backups
+    entrypoint: >
+      sh -c 'while true; do
+        pg_dump -h db -U resa -Fc resa > /backups/resa-$$(date +%Y-%m-%d-%H%M).dump &&
+        find /backups -name "*.dump" -mtime +14 -delete;
+        sleep 86400; done'
+
+volumes:
+  resa-db:
+  caddy-data:
+  caddy-config:

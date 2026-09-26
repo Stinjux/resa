@@ -6,5 +6,6 @@ export default defineConfig({
     fileParallelism: false,
     globalSetup: ['./test/global-setup.ts'],
     testTimeout: 20000,
+    env: { LOGIN_RATE_LIMIT: '1000' },
   },
 });

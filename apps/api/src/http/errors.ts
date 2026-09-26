@@ -35,6 +35,9 @@ export function errorHandler(err: FastifyError | Error, req: FastifyRequest, rep
       .send({ error: { code: 'VALIDATION', message: 'Requête invalide.', details: { issues: err.issues } } });
   }
   const status = (err as FastifyError).statusCode;
+  if (status === 429) {
+    return reply.status(429).send({ error: { code: 'RATE_LIMITED', message: 'Trop de tentatives. Réessayez dans une minute.' } });
+  }
   if (status && status < 500) {
     return reply.status(status).send({ error: { code: 'BAD_REQUEST', message: err.message } });
   }

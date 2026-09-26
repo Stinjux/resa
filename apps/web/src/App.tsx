@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { get, getToken, post, setToken, type User } from './api';
 import { ROLE_LABEL } from './format';
+import { LocaleSwitcher, useI18n } from './i18n';
 import { BookingFlow } from './pages/BookingFlow';
 import { Config } from './pages/Config';
 import { Login } from './pages/Login';
@@ -18,6 +19,7 @@ export function App() {
   const [user, setUser] = useState<User | null>(null);
   const [page, setPage] = useState<Page>('book');
   const [ready, setReady] = useState(false);
+  const { t } = useI18n();
 
   useEffect(() => {
     if (!getToken()) return setReady(true);
@@ -44,11 +46,11 @@ export function App() {
   const canSheet = hasRole(user, ['org_admin', 'club_admin', 'receptionist', 'starter']);
   const canStarter = hasRole(user, ['org_admin', 'club_admin', 'starter']);
   const tabs: Array<[Page, string, boolean]> = [
-    ['sheet', 'Feuille de départs', canSheet],
-    ['starter', 'Starter', canStarter],
-    ['config', 'Configuration', hasRole(user, ['org_admin', 'club_admin'])],
-    ['book', 'Réserver', !user || !!user.customerId],
-    ['mine', 'Mes réservations', !!user?.customerId],
+    ['sheet', t('nav.sheet'), canSheet],
+    ['starter', t('nav.starter'), canStarter],
+    ['config', t('nav.config'), hasRole(user, ['org_admin', 'club_admin'])],
+    ['book', t('nav.book'), !user || !!user.customerId],
+    ['mine', t('nav.mine'), !!user?.customerId],
   ];
 
   if (!ready) return null;
@@ -62,16 +64,17 @@ export function App() {
           ))}
         </nav>
         <span className="spacer" />
+        <LocaleSwitcher />
         {user ? (
           <>
             <span className="who">
               {user.displayName}
               {user.roles.length > 0 && ` · ${[...new Set(user.roles.map((r) => ROLE_LABEL[r.role]))].join(', ')}`}
             </span>
-            <button className="btn sm" onClick={logout}>Déconnexion</button>
+            <button className="btn sm" onClick={logout}>{t('nav.logout')}</button>
           </>
         ) : (
-          <button className="btn sm" onClick={() => setPage('login')}>Connexion</button>
+          <button className="btn sm" onClick={() => setPage('login')}>{t('nav.login')}</button>
         )}
       </header>
       <main>

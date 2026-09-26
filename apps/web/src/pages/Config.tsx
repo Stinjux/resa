@@ -7,7 +7,10 @@ import { ErrorBox, useClubs } from './common';
 type Tab = 'general' | 'schedule' | 'tariffs' | 'resources' | 'pos';
 
 export function Config({ user }: { user: User }) {
-  const clubs = useClubs(user, ['org_admin', 'club_admin']);
+  const [clubsVersion, setClubsVersion] = useState(0);
+  const clubs = useClubs(user, ['org_admin', 'club_admin'], clubsVersion);
+  const isOrgAdmin = user.roles.some((r) => r.role === 'org_admin' && r.clubId === null);
+  const [creating, setCreating] = useState(false);
   const [clubId, setClubId] = useState<string | null>(null);
   const [cfg, setCfg] = useState<any>(null);
   const [tab, setTab] = useState<Tab>('general');
@@ -34,12 +37,39 @@ export function Config({ user }: { user: User }) {
           <label>Golf<select value={clubId ?? ''} onChange={(e) => { setClubId(e.target.value); setCfg(null); }}>
             {clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
         )}
+        {isOrgAdmin && <button className="btn sm" onClick={() => setCreating(true)}>+ Nouveau golf</button>}
         <nav className="nav">
           {([['general', 'Général'], ['schedule', 'Parcours & horaires'], ['tariffs', 'Tarifs'], ['resources', 'Caddies & matériel'], ['pos', 'Caisse (POS)']] as Array<[Tab, string]>)
             .map(([t, l]) => <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{l}</button>)}
         </nav>
       </div>
       <ErrorBox error={error} />
+      {creating && (
+        <div className="card stack">
+          <h2>Nouveau golf</h2>
+          <EntityForm isNew initial={{ timezone: 'Africa/Casablanca', currency: 'MAD', defaultLocale: 'fr', countryCode: 'MA', taxRate: '20' }}
+            fields={[
+              { key: 'code', label: 'Code court', type: 'text', nullable: false, hint: 'Ex. G5 (majuscules)' },
+              { key: 'name', label: 'Nom', type: 'text', nullable: false },
+              { key: 'timezone', label: 'Fuseau horaire', type: 'text', nullable: false, hint: 'Ex. Africa/Casablanca, Europe/Lisbon' },
+              { key: 'currency', label: 'Devise', type: 'text', nullable: false, hint: 'MAD, EUR, USD…' },
+              { key: 'defaultLocale', label: 'Langue', type: 'select', options: [['fr', 'Français'], ['en', 'English'], ['ar', 'العربية'], ['es', 'Español']] },
+              { key: 'countryCode', label: 'Pays (code ISO)', type: 'text', hint: 'MA, PT, ES…' },
+              { key: 'taxRate', label: 'TVA (%)', type: 'text', nullable: false },
+            ]}
+            onSubmit={async (v) => {
+              const { taxRate, ...rest } = v;
+              const r = await post<{ id: string }>('/api/clubs', { ...rest, taxRateBp: Math.round(Number(String(taxRate).replace(',', '.')) * 100) });
+              setCreating(false);
+              setClubsVersion((n) => n + 1);
+              setClubId(r.id);
+              setCfg(null);
+              setTab('general');
+            }}
+            onCancel={() => setCreating(false)} submitLabel="Créer le golf" />
+          <p className="small muted" style={{ margin: 0 }}>Un parcours et une ouverture 07:00–17:00 sont créés ; renseignez ensuite les tarifs et le nombre de caddies (aucune réservation n'est possible sans green fee).</p>
+        </div>
+      )}
       {cfg && tab === 'general' && <General cfg={cfg} onSave={async (v) => { await patch(base, v); load(); }} />}
       {cfg && tab === 'schedule' && <Schedule cfg={cfg} base={base} save={save} />}
       {cfg && tab === 'tariffs' && <Tariffs cfg={cfg} save={save} />}
@@ -122,7 +152,7 @@ function Editable({ title, items, render, fields, entity, save, newValues, colum
             ) : (
               <tr key={item.id} style={{ opacity: item.active === false || item.status === 'retired' ? 0.5 : 1 }}>
                 {render(item).map((cell, i) => <td key={i}>{cell}</td>)}
-                <td style={{ textAlign: 'right' }}><button className="btn sm" onClick={() => setEditing(item.id)}>Modifier</button></td>
+                <td style={{ textAlign: 'end' }}><button className="btn sm" onClick={() => setEditing(item.id)}>Modifier</button></td>
               </tr>
             ))}
             {items.length === 0 && <tr><td colSpan={columns.length + 1} className="muted">Aucun élément.</td></tr>}

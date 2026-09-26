@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { get, post } from '../api';
 import { money } from '../format';
 import { ErrorBox } from './common';
+import { useI18n } from '../i18n';
 
 export const PAYMENT_STATUS: Record<string, [string, string]> = {
   nothing_due: ['Rien à payer', 'badge'],
@@ -15,9 +16,10 @@ const METHODS: Array<[string, string]> = [['cash', 'Espèces'], ['card_terminal'
 const METHOD_LABEL: Record<string, string> = { ...Object.fromEntries(METHODS), online: 'En ligne', pos: 'Caisse' };
 
 export function PaymentBadge({ status }: { status: string | null | undefined }) {
+  const { t } = useI18n();
   if (!status) return null;
-  const [label, cls] = PAYMENT_STATUS[status] ?? [status, 'badge'];
-  return <span className={cls}>{label}</span>;
+  const [, cls] = PAYMENT_STATUS[status] ?? [status, 'badge'];
+  return <span className={cls}>{t(`pay.${status}` as never)}</span>;
 }
 
 /** Solde, paiements et remboursements d'une réservation ; encaisser / rembourser. */
