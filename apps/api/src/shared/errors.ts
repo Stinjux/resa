@@ -26,7 +26,8 @@ export type DomainErrorCode =
   | 'DRAFT_EXPIRED'
   | 'TEE_TIME_BLOCKED'
   | 'INVOICE_EXISTS'
-  | 'LEGAL_INFO_MISSING';
+  | 'LEGAL_INFO_MISSING'
+  | 'PASSWORD_CHANGE_REQUIRED';
 
 export class DomainError extends Error {
   constructor(

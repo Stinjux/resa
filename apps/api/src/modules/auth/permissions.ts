@@ -40,6 +40,8 @@ export interface Principal {
   /** Compte du portail partenaire (tour-opérateur, agence…). */
   partnerId?: string | null;
   partnerName?: string | null;
+  /** Mot de passe provisoire : à changer avant toute autre action. */
+  mustChangePassword?: boolean;
   roles: Array<{ clubId: string | null; role: Role }>;
 }
 

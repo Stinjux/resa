@@ -29,6 +29,7 @@ const STATUS: Record<DomainErrorCode, number> = {
   TEE_TIME_BLOCKED: 409,
   INVOICE_EXISTS: 409,
   LEGAL_INFO_MISSING: 422,
+  PASSWORD_CHANGE_REQUIRED: 403,
 };
 
 export function errorHandler(err: FastifyError | Error, req: FastifyRequest, reply: FastifyReply) {

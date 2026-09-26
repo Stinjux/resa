@@ -87,6 +87,9 @@ Servie par le serveur de l'API une fois compilée (`npm start`) :
   réception ou la direction** avant réservation ; confirmation envoyée au client (voir `docs/MESSAGERIE.md`)
 - **Caisse** (réception, direction) : reçus, factures et avoirs imprimables (PDF), clôture de caisse (Z)
   avec écart d'espèces, journal et export comptable (voir `docs/FACTURATION.md`)
+- **Équipe** (direction, administrateur) : créer les comptes du personnel avec leurs rôles par golf,
+  mot de passe provisoire à changer à la première connexion, réinitialisation, désactivation
+  (déconnexion immédiate). La direction d'un golf ne gère que les comptes de ses golfs.
 - **Partenaires** (tour-opérateurs, agences) : tarifs négociés, allotements avec release automatique,
   portail de réservation pour le partenaire, relevé de compte (voir `docs/PARTENAIRES.md`)
 - **E-mails aux clients** : confirmation, modification, annulation et rappel, dans la langue du client ;
@@ -201,6 +204,8 @@ est stockée, mots de passe hachés avec scrypt).
 | GET · POST · PATCH | `/api/partners[/:id]` · `/api/partners/:id/users` | direction (lecture : réception) | Partenaires, accès au portail |
 | GET · POST | `/api/clubs/:clubId/allotments` · `/allotments/:id/cancel` | direction | Allotements |
 | GET | `/api/partners/:id/statement[.csv]?clubId=&from=&to=` | direction | Relevé de compte |
+| GET · POST · PATCH | `/api/staff-users[/:id]` · `/:id/reset-password` | direction, administrateur | Comptes du personnel |
+| POST | `/api/me/password` | tout compte | Changer son mot de passe |
 | GET · POST | `/api/partner/availability` · `/quote` · `/bookings` · `/bookings/:id/cancel` | partenaire | Portail partenaire |
 
 Codes d'erreur métier stables : `TEE_TIME_FULL`, `TEE_TIME_PRIVATE`,

@@ -121,6 +121,15 @@ const fr = {
   'pt.cancel': 'Annuler',
   'pt.cancelConfirm': 'Annuler cette réservation ?',
   'pt.balance': 'Reste dû',
+  'nav.password': 'Mot de passe',
+  'pwd.title': 'Changer de mot de passe',
+  'pwd.required': 'Votre mot de passe est provisoire : choisissez-en un nouveau pour continuer.',
+  'pwd.current': 'Mot de passe actuel',
+  'pwd.next': 'Nouveau mot de passe (10 caractères minimum)',
+  'pwd.confirm': 'Confirmer le nouveau mot de passe',
+  'pwd.mismatch': 'Les deux mots de passe ne correspondent pas.',
+  'pwd.submit': 'Enregistrer',
+  'pwd.done': 'Mot de passe modifié. Vos autres sessions ont été fermées.',
 };
 
 export type MessageKey = keyof typeof fr;
@@ -238,6 +247,15 @@ const en: Dict = {
   'pt.cancel': 'Cancel',
   'pt.cancelConfirm': 'Cancel this booking?',
   'pt.balance': 'Balance',
+  'nav.password': 'Password',
+  'pwd.title': 'Change password',
+  'pwd.required': 'Your password is temporary: choose a new one to continue.',
+  'pwd.current': 'Current password',
+  'pwd.next': 'New password (at least 10 characters)',
+  'pwd.confirm': 'Confirm new password',
+  'pwd.mismatch': 'Passwords do not match.',
+  'pwd.submit': 'Save',
+  'pwd.done': 'Password changed. Your other sessions have been signed out.',
 };
 
 const ar: Dict = {
@@ -352,6 +370,15 @@ const ar: Dict = {
   'pt.cancel': 'إلغاء',
   'pt.cancelConfirm': 'إلغاء هذا الحجز؟',
   'pt.balance': 'المتبقي',
+  'nav.password': 'كلمة المرور',
+  'pwd.title': 'تغيير كلمة المرور',
+  'pwd.required': 'كلمة المرور مؤقتة: اختر كلمة جديدة للمتابعة.',
+  'pwd.current': 'كلمة المرور الحالية',
+  'pwd.next': 'كلمة المرور الجديدة (10 أحرف على الأقل)',
+  'pwd.confirm': 'تأكيد كلمة المرور الجديدة',
+  'pwd.mismatch': 'كلمتا المرور غير متطابقتين.',
+  'pwd.submit': 'حفظ',
+  'pwd.done': 'تم تغيير كلمة المرور. تم إغلاق جلساتك الأخرى.',
 };
 
 export const MESSAGES: Record<Locale, Dict> = { fr, en, ar };

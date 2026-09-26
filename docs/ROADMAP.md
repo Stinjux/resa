@@ -34,11 +34,11 @@ Chaque étape livre un logiciel fonctionnel et testé.
 | 11 | **E-mails** : confirmation, modification, annulation, rappel la veille ; fr/en/ar ; récapitulatif unique pour un groupe ; file avec reprises ; SMTP standard (voir `docs/EMAILS.md`) | ✅ livré (serveur SMTP à fournir) |
 | 12 | **Facturation et caisse** : reçus, factures aux mentions légales marocaines (ICE, IF, RC, patente) à numérotation continue, avoirs, clôture de caisse (Z) avec comptage des espèces, export comptable (voir `docs/FACTURATION.md`) | ✅ livré |
 | 13 | **Tour-opérateurs et agences** : partenaires à tarifs négociés, voucher, allotements avec release automatique, portail partenaire, relevé de compte (voir `docs/PARTENAIRES.md`) | ✅ livré |
+| 14 | **Équipe** : comptes du personnel, rôles par golf, mot de passe provisoire à changer, réinitialisation, désactivation immédiate, changement de son mot de passe | ✅ livré |
 
 ## Suites possibles
 
 - Paiement en ligne (prestataire à choisir, ex. CMI) et SMS de confirmation.
-- Écran de gestion des comptes du personnel.
 - Traduction des écrans du personnel et des libellés saisis par les golfs (tarifs, matériel).
 - Connecteur du fournisseur de caisse choisi (`docs/POS.md`).
 - Statistiques (taux de remplissage, chiffre d'affaires par golf).

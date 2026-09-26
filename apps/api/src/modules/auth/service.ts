@@ -36,6 +36,7 @@ export async function login(
     hashToken(token),
     expiresAt,
   ]);
+  await db.query('UPDATE users SET last_login_at = $2 WHERE id = $1', [user.id, now]);
   return { token, expiresAt, principal: (await loadPrincipal(db, user.id))! };
 }
 
@@ -46,7 +47,7 @@ export async function logout(db: Db, token: string): Promise<void> {
 export async function loadPrincipal(q: Queryable, userId: string): Promise<Principal | null> {
   const { rows } = await q.query(
     `SELECT u.id, u.organization_id AS "organizationId", u.display_name AS "displayName", u.customer_id AS "customerId",
-            u.partner_id AS "partnerId", p.name AS "partnerName"
+            u.partner_id AS "partnerId", p.name AS "partnerName", u.must_change_password AS "mustChangePassword"
        FROM users u LEFT JOIN partners p ON p.id = u.partner_id
       WHERE u.id = $1 AND u.active AND (u.partner_id IS NULL OR p.active)`,
     [userId],
@@ -57,7 +58,8 @@ export async function loadPrincipal(q: Queryable, userId: string): Promise<Princ
     [userId],
   );
   return { userId: rows[0].id, organizationId: rows[0].organizationId, displayName: rows[0].displayName,
-    customerId: rows[0].customerId, partnerId: rows[0].partnerId, partnerName: rows[0].partnerName, roles: roles.rows };
+    customerId: rows[0].customerId, partnerId: rows[0].partnerId, partnerName: rows[0].partnerName,
+    mustChangePassword: rows[0].mustChangePassword, roles: roles.rows };
 }
 
 export async function principalFromToken(q: Queryable, token: string, now: Date): Promise<Principal | null> {

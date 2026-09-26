@@ -59,6 +59,7 @@ export interface User {
   customerId: string | null;
   partnerId?: string | null;
   partnerName?: string | null;
+  mustChangePassword?: boolean;
   roles: Role[];
 }
 export interface Club {

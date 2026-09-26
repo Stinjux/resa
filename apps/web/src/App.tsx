@@ -8,13 +8,14 @@ import { Config } from './pages/Config';
 import { Inbox } from './pages/Inbox';
 import { Cash } from './pages/Cash';
 import { PartnerPortal } from './pages/PartnerPortal';
+import { ChangePassword, Team } from './pages/Team';
 import { Reports } from './pages/Reports';
 import { Login } from './pages/Login';
 import { MyBookings } from './pages/MyBookings';
 import { StarterBoard } from './pages/StarterBoard';
 import { TeeSheet } from './pages/TeeSheet';
 
-type Page = 'book' | 'sheet' | 'starter' | 'mine' | 'config' | 'assistant' | 'reports' | 'inbox' | 'cash' | 'partner' | 'login';
+type Page = 'book' | 'sheet' | 'starter' | 'mine' | 'config' | 'assistant' | 'reports' | 'inbox' | 'cash' | 'partner' | 'team' | 'password' | 'login';
 
 export function hasRole(user: User | null, roles: string[]): boolean {
   return !!user?.roles.some((r) => roles.includes(r.role));
@@ -63,6 +64,7 @@ export function App() {
     ['assistant', 'Assistant IA', canSheet],
     ['reports', 'Rapports', hasRole(user, ['org_admin', 'club_admin'])],
     ['config', t('nav.config'), hasRole(user, ['org_admin', 'club_admin'])],
+    ['team', 'Équipe', hasRole(user, ['org_admin', 'club_admin'])],
     ['partner', t('nav.partner'), !!user?.partnerId],
     ['book', t('nav.book'), !user || !!user.customerId],
     ['mine', t('nav.mine'), !!user?.customerId],
@@ -74,7 +76,7 @@ export function App() {
       <header className="topbar">
         <span className="brand">⛳ Resa Golf</span>
         <nav className="nav">
-          {tabs.filter(([, , show]) => show).map(([p, label]) => (
+          {tabs.filter(([, , show]) => show && !user?.mustChangePassword).map(([p, label]) => (
             <button key={p} className={page === p ? 'active' : ''} onClick={() => setPage(p)}>{label}</button>
           ))}
         </nav>
@@ -86,6 +88,7 @@ export function App() {
               {user.displayName}
               {user.roles.length > 0 && ` · ${[...new Set(user.roles.map((r) => ROLE_LABEL[r.role]))].join(', ')}`}
             </span>
+            <button className="btn sm" onClick={() => setPage('password')}>{t('nav.password')}</button>
             <button className="btn sm" onClick={logout}>{t('nav.logout')}</button>
           </>
         ) : (
@@ -93,6 +96,9 @@ export function App() {
         )}
       </header>
       <main>
+        {user?.mustChangePassword ? (
+          <ChangePassword required onDone={() => get<{ user: User }>('/api/me').then((r) => onLogin(r.user))} />
+        ) : <>
         {page === 'login' && <Login onLogin={onLogin} />}
         {page === 'book' && <BookingFlow user={user} onDone={() => user?.customerId && setPage('mine')} />}
         {page === 'sheet' && user && <TeeSheet user={user} />}
@@ -104,6 +110,9 @@ export function App() {
         {page === 'reports' && user && <Reports user={user} />}
         {page === 'cash' && user && <Cash user={user} />}
         {page === 'partner' && user?.partnerId && <PartnerPortal user={user} />}
+        {page === 'team' && user && <Team user={user} />}
+        {page === 'password' && user && <ChangePassword required={false} onDone={() => undefined} />}
+        </>}
       </main>
     </>
   );

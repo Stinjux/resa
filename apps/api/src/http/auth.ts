@@ -13,6 +13,8 @@ declare module 'fastify' {
   }
 }
 
+const PASSWORD_CHANGE_ALLOWED = new Set(['/api/me', '/api/me/password', '/api/auth/logout']);
+
 export function registerAuth(app: FastifyInstance, deps: AppDeps): void {
   app.decorateRequest('principal', null);
   app.decorateRequest('authToken', null);
@@ -23,6 +25,10 @@ export function registerAuth(app: FastifyInstance, deps: AppDeps): void {
     req.authToken = token;
     req.principal = await principalFromToken(deps.db, token, deps.now());
     if (!req.principal) throw new DomainError('UNAUTHENTICATED', 'Session expirée ou invalide.');
+    // Mot de passe provisoire : seules la lecture du profil, le changement de mot de passe et la déconnexion restent possibles.
+    if (req.principal.mustChangePassword && !PASSWORD_CHANGE_ALLOWED.has(req.url.split('?')[0]!)) {
+      throw new DomainError('PASSWORD_CHANGE_REQUIRED', 'Choisissez un nouveau mot de passe pour continuer.');
+    }
   });
 }
 
