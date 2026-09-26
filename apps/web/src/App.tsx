@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react';
 import { get, getToken, post, setToken, type User } from './api';
 import { ROLE_LABEL } from './format';
 import { BookingFlow } from './pages/BookingFlow';
+import { Config } from './pages/Config';
 import { Login } from './pages/Login';
 import { MyBookings } from './pages/MyBookings';
 import { StarterBoard } from './pages/StarterBoard';
 import { TeeSheet } from './pages/TeeSheet';
 
-type Page = 'book' | 'sheet' | 'starter' | 'mine' | 'login';
+type Page = 'book' | 'sheet' | 'starter' | 'mine' | 'config' | 'login';
 
 export function hasRole(user: User | null, roles: string[]): boolean {
   return !!user?.roles.some((r) => roles.includes(r.role));
@@ -45,6 +46,7 @@ export function App() {
   const tabs: Array<[Page, string, boolean]> = [
     ['sheet', 'Feuille de départs', canSheet],
     ['starter', 'Starter', canStarter],
+    ['config', 'Configuration', hasRole(user, ['org_admin', 'club_admin'])],
     ['book', 'Réserver', !user || !!user.customerId],
     ['mine', 'Mes réservations', !!user?.customerId],
   ];
@@ -78,6 +80,7 @@ export function App() {
         {page === 'sheet' && user && <TeeSheet user={user} />}
         {page === 'starter' && user && <StarterBoard user={user} />}
         {page === 'mine' && user && <MyBookings />}
+        {page === 'config' && user && <Config user={user} />}
       </main>
     </>
   );

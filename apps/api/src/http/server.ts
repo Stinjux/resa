@@ -5,6 +5,7 @@ import type { Db } from '../db/pool.js';
 import { registerAuth } from './auth.js';
 import { errorHandler } from './errors.js';
 import { authRoutes } from './routes/auth.js';
+import { configRoutes } from './routes/config.js';
 import { staffRoutes } from './routes/staff.js';
 import { bookingRoutes } from './routes/bookings.js';
 import { catalogRoutes } from './routes/catalog.js';
@@ -29,6 +30,7 @@ export function buildServer(deps: AppDeps, opts: { logger?: boolean; webRoot?: s
   bookingRoutes(app, deps);
   authRoutes(app, deps);
   staffRoutes(app, deps);
+  configRoutes(app, deps);
 
   if (opts.webRoot && existsSync(opts.webRoot)) {
     app.register(fastifyStatic, { root: opts.webRoot });

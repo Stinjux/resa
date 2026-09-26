@@ -70,6 +70,9 @@ Servie par le serveur de l'API une fois compilée (`npm start`) :
   création téléphonique, groupe réparti sur des départs consécutifs, modification, réunion/déplacement, annulation, historique
 - **Starter** : aujourd'hui / demain / semaine, caddie nommé et matériel numéroté, montant à encaisser sur place
 - **Mes réservations** (client)
+- **Configuration** (direction, administrateur) : paramètres du golf, parcours, horaires,
+  exceptions et fermetures avec aperçu de la grille, tarifs, stocks et exceptions par jour,
+  caddies et matériel numéroté. Chaque modification est historisée.
 
 Les boutons de comptes de démonstration de la page de connexion se masquent
 en compilant avec `VITE_DEMO=false`.
@@ -155,6 +158,10 @@ est stockée, mots de passe hachés avec scrypt).
 | PUT | `/api/tee-times/:id/caddie` | starter | Nommer le caddie d'un départ |
 | PUT | `/api/allocations/:id/units` | starter | Attribuer voiturette / sac n° |
 | GET | `/api/clubs/:clubId/audit` | direction | Historique du golf |
+| GET · PATCH | `/api/clubs/:clubId/config` | direction | Configuration complète / paramètres du golf |
+| POST · PATCH | `/api/clubs/:clubId/config/:entity[/:id]` | direction | `courses`, `schedule-rules`, `tariffs`, `resource-types`, `caddies`, `resource-units` |
+| PUT | `/api/clubs/:clubId/config/resource-types/:id/overrides/:date` | direction | Stock différent un jour donné |
+| GET | `/api/clubs/:clubId/config/grid-preview?courseId=&date=` | direction | Aperçu des départs d'un jour |
 
 Codes d'erreur métier stables : `TEE_TIME_FULL`, `TEE_TIME_PRIVATE`,
 `PRIVATE_REQUIRES_EMPTY_TEE_TIME`, `HOLES_MISMATCH`, `CADDIE_UNAVAILABLE`,
