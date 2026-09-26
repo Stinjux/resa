@@ -20,7 +20,10 @@ export type DomainErrorCode =
   | 'EMAIL_TAKEN'
   | 'NO_CADDIE_RESERVED'
   | 'CADDIE_ALREADY_ASSIGNED'
-  | 'UNIT_UNAVAILABLE';
+  | 'UNIT_UNAVAILABLE'
+  | 'AI_NOT_CONFIGURED'
+  | 'AI_UNAVAILABLE'
+  | 'DRAFT_EXPIRED';
 
 export class DomainError extends Error {
   constructor(

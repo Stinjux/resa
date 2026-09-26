@@ -13,10 +13,12 @@ export type Permission =
   | 'customer.view' // coordonnées et fiche des golfeurs du golf
   | 'starter.operate' // attribuer caddie et matériel
   | 'config.manage'
-  | 'audit.view';
+  | 'audit.view'
+  | 'reports.view'; // statistiques et rapports IA
 
 const ALL: Permission[] = [
   'teesheet.view', 'booking.view', 'booking.manage', 'customer.view', 'starter.operate', 'config.manage', 'audit.view',
+  'reports.view',
 ];
 
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {

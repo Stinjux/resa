@@ -28,6 +28,8 @@ Chaque étape livre un logiciel fonctionnel et testé.
 - **Historique** (`audit_log`) des créations, modifications, déplacements et
   annulations, sans données personnelles en clair.
 
+| 8 | **IA** : assistant de réservation en langage naturel (brouillon + confirmation humaine), questions directes, rapports d'activité rédigés par l'IA sur des chiffres calculés par Resa (voir `docs/IA.md`) | ✅ livré |
+
 ## Suites possibles
 
 - Paiement en ligne (prestataire à choisir, ex. CMI) et e-mails / SMS de confirmation.

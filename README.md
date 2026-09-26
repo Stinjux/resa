@@ -38,6 +38,11 @@ npm start                                  # compile, crée les tables, charge l
 
 Puis ouvrez **http://localhost:3000**.
 
+### Activer l'IA (facultatif)
+
+Créez un fichier `.env` à la racine avec `ANTHROPIC_API_KEY=sk-ant-...` puis relancez
+`docker compose up`. Voir [`docs/IA.md`](docs/IA.md).
+
 ### Mettre en ligne
 
 Voir [`docs/DEPLOIEMENT.md`](docs/DEPLOIEMENT.md) : un serveur, un nom de domaine,
@@ -75,6 +80,9 @@ Servie par le serveur de l'API une fois compilée (`npm start`) :
   création téléphonique, groupe réparti sur des départs consécutifs, modification, réunion/déplacement, annulation, historique
 - **Starter** : aujourd'hui / demain / semaine, caddie nommé et matériel numéroté, montant à encaisser sur place
 - **Mes réservations** (client) : statut de paiement, annulation en ligne dans le délai gratuit
+- **Assistant IA** (personnel) : réserver en langage naturel (« book moi 2 départs à 13h le 25 mars »),
+  l'IA demande ce qui manque puis prépare un brouillon que l'employé confirme ; questions directes
+- **Rapports** (direction) : chiffres de la période + analyse rédigée par l'IA
 - Interface client en **français, anglais et arabe** (sélecteur de langue en haut à droite)
 - **Configuration** (direction, administrateur) : paramètres du golf, parcours, horaires,
   exceptions et fermetures avec aperçu de la grille, tarifs, stocks et exceptions par jour,

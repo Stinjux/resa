@@ -23,6 +23,9 @@ const STATUS: Record<DomainErrorCode, number> = {
   NO_CADDIE_RESERVED: 409,
   CADDIE_ALREADY_ASSIGNED: 409,
   UNIT_UNAVAILABLE: 409,
+  AI_NOT_CONFIGURED: 503,
+  AI_UNAVAILABLE: 502,
+  DRAFT_EXPIRED: 409,
 };
 
 export function errorHandler(err: FastifyError | Error, req: FastifyRequest, reply: FastifyReply) {

@@ -3,13 +3,15 @@ import { get, getToken, post, setToken, type User } from './api';
 import { ROLE_LABEL } from './format';
 import { LocaleSwitcher, useI18n } from './i18n';
 import { BookingFlow } from './pages/BookingFlow';
+import { Assistant } from './pages/Assistant';
 import { Config } from './pages/Config';
+import { Reports } from './pages/Reports';
 import { Login } from './pages/Login';
 import { MyBookings } from './pages/MyBookings';
 import { StarterBoard } from './pages/StarterBoard';
 import { TeeSheet } from './pages/TeeSheet';
 
-type Page = 'book' | 'sheet' | 'starter' | 'mine' | 'config' | 'login';
+type Page = 'book' | 'sheet' | 'starter' | 'mine' | 'config' | 'assistant' | 'reports' | 'login';
 
 export function hasRole(user: User | null, roles: string[]): boolean {
   return !!user?.roles.some((r) => roles.includes(r.role));
@@ -48,6 +50,8 @@ export function App() {
   const tabs: Array<[Page, string, boolean]> = [
     ['sheet', t('nav.sheet'), canSheet],
     ['starter', t('nav.starter'), canStarter],
+    ['assistant', 'Assistant IA', canSheet],
+    ['reports', 'Rapports', hasRole(user, ['org_admin', 'club_admin'])],
     ['config', t('nav.config'), hasRole(user, ['org_admin', 'club_admin'])],
     ['book', t('nav.book'), !user || !!user.customerId],
     ['mine', t('nav.mine'), !!user?.customerId],
@@ -84,6 +88,8 @@ export function App() {
         {page === 'starter' && user && <StarterBoard user={user} />}
         {page === 'mine' && user && <MyBookings />}
         {page === 'config' && user && <Config user={user} />}
+        {page === 'assistant' && user && <Assistant />}
+        {page === 'reports' && user && <Reports user={user} />}
       </main>
     </>
   );

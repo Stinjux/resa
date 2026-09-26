@@ -135,3 +135,21 @@ table.sheet { width: 100%; border-collapse: collapse; }
 .day-title { margin: 20px 0 8px; text-transform: capitalize; }
 .demo-accounts { font-size: 13px; }
 .demo-accounts button { margin: 2px; }
+
+/* Assistant IA */
+.chat { display: flex; flex-direction: column; gap: 10px; }
+.bubble { max-width: 80%; padding: 10px 14px; border-radius: 14px; white-space: pre-wrap; line-height: 1.45; }
+.bubble.user { align-self: flex-end; background: var(--accent); color: var(--accent-text); border-bottom-right-radius: 4px; }
+.bubble.assistant { align-self: flex-start; background: var(--surface-2); border-bottom-left-radius: 4px; }
+.bubble.system { align-self: center; background: none; color: var(--muted); font-size: 13px; padding: 2px 8px; }
+[dir="rtl"] .bubble.user { align-self: flex-start; }
+[dir="rtl"] .bubble.assistant { align-self: flex-end; }
+.draft { border: 2px solid var(--accent); border-radius: var(--radius); padding: 12px 14px; background: var(--surface); align-self: stretch; }
+.draft.done { border-color: var(--border); }
+.composer { display: flex; gap: 8px; align-items: flex-end; }
+.composer textarea { flex: 1; resize: vertical; min-height: 44px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.markdown h2 { font-size: 20px; margin: 4px 0 10px; }
+.markdown h3 { font-size: 16px; margin: 16px 0 6px; }
+.markdown p, .markdown ul { margin: 0 0 8px; }
+.figures td:last-child { text-align: end; font-variant-numeric: tabular-nums; }

@@ -29,6 +29,8 @@ services:
       DATABASE_URL: postgres://resa:${POSTGRES_PASSWORD}@db:5432/resa
       AUTO_MIGRATE: "1"
       TRUST_PROXY: "1"
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-}
 
   caddy:
     image: caddy:2

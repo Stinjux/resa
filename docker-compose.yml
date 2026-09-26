@@ -24,6 +24,9 @@ services:
       DATABASE_URL: postgres://resa:resa@db:5432/resa_dev
       AUTO_MIGRATE: "1"
       SEED_DEMO: "1"   # comptes et réservations de démonstration
+      # IA (facultatif) : mettre ANTHROPIC_API_KEY=... dans un fichier .env à côté de ce fichier
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-}
     ports:
       - "3000:3000"
 
