@@ -26,6 +26,7 @@ const STATUS: Record<DomainErrorCode, number> = {
   AI_NOT_CONFIGURED: 503,
   AI_UNAVAILABLE: 502,
   DRAFT_EXPIRED: 409,
+  TEE_TIME_BLOCKED: 409,
 };
 
 export function errorHandler(err: FastifyError | Error, req: FastifyRequest, reply: FastifyReply) {

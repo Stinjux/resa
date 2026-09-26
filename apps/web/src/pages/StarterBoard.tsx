@@ -6,9 +6,11 @@ import { PaymentBadge } from './PaymentSection';
 
 interface Equipment { allocationId: string; resourceTypeId: string; name: string; quantity: number; units: Array<{ id: string; label: string }> }
 interface BoardBooking { id: string; reference: string; players: number; customerName: string | null; playerNames: Array<string | null>;
+  checkinStatus: 'expected' | 'arrived' | 'no_show';
   caddiePayment: string; dueOnSiteMinor: number | null; notes: string | null; equipment: Equipment[];
   paymentStatus: string; balanceMinor: number }
 interface BoardTeeTime { teeTimeId: string; localDate: string; localTime: string; course: { name: string }; holes: number; isPrivate: boolean;
+  startedAt: string | null;
   players: number; remaining: number; caddie: { reserved: boolean; caddieId: string | null; name: string | null }; bookings: BoardBooking[] }
 
 export function StarterBoard({ user }: { user: User }) {
@@ -64,6 +66,7 @@ export function StarterBoard({ user }: { user: User }) {
           <button className={`btn sm ${days === 7 ? 'primary' : ''}`} onClick={() => { setDate(today); setDays(7); }}>Semaine</button>
         </div>
         <span className="spacer" />
+        <button className="btn sm no-print" onClick={() => window.print()}>🖨 Imprimer</button>
         <span className="small muted">{board.length} départ(s) · {board.reduce((n, t) => n + t.players, 0)} joueurs ·
           {' '}{board.filter((t) => t.caddie.reserved && !t.caddie.name).length} caddie(s) à nommer</span>
       </div>
@@ -82,11 +85,23 @@ export function StarterBoard({ user }: { user: User }) {
                     <div className="small muted">{t.course.name}</div>
                     <div className="small">{t.players} j · {t.holes} trous</div>
                     {t.isPrivate && <span className="badge private">Privé</span>}
+                    <div className="no-print" style={{ marginTop: 6 }}>
+                      <button className={`btn sm ${t.startedAt ? 'primary' : ''}`}
+                        onClick={() => act(() => put(`/api/tee-times/${t.teeTimeId}/started`, { started: !t.startedAt }))}>
+                        {t.startedAt ? '✓ Parti' : 'Départ parti'}</button>
+                    </div>
                   </div>
                   <div className="stack" style={{ gap: 8 }}>
                     {t.bookings.map((b) => (
                       <div key={b.id}>
                         <strong>{b.customerName ?? b.reference}</strong> <span className="muted small">{b.reference} · {b.players} joueur(s)</span>
+                        {' '}{b.checkinStatus === 'arrived' && <span className="badge ok">arrivé</span>}
+                        {b.checkinStatus === 'no_show' && <span className="badge warn">absent</span>}
+                        <span className="no-print" style={{ marginInlineStart: 6 }}>
+                          {b.checkinStatus !== 'arrived' && <button className="btn sm" onClick={() => act(() => put(`/api/bookings/${b.id}/checkin`, { status: 'arrived' }))}>Arrivé</button>}
+                          {b.checkinStatus === 'expected' && <button className="btn sm" onClick={() => act(() => put(`/api/bookings/${b.id}/checkin`, { status: 'no_show' }))}>Absent</button>}
+                          {b.checkinStatus !== 'expected' && <button className="btn sm" onClick={() => act(() => put(`/api/bookings/${b.id}/checkin`, { status: 'expected' }))}>Annuler</button>}
+                        </span>
                         {b.playerNames.some(Boolean) && <div className="small muted">{b.playerNames.filter(Boolean).join(', ')}</div>}
                         <div className="small">
                           Caddie {b.caddiePayment === 'on_site'

@@ -73,6 +73,8 @@ interface TeeTimeRow {
   caddieId: string | null;
   caddieName: string | null;
   notes: string | null;
+  blockedReason: string | null;
+  startedAt: Date | null;
 }
 
 interface BookingRow {
@@ -89,6 +91,8 @@ interface BookingRow {
   customerPhone: string | null;
   customerEmail: string | null;
   notes: string | null;
+  checkinStatus: 'expected' | 'arrived' | 'no_show';
+  customerNoShows: number;
   orderTotalMinor: number | null;
   paidMinor: number | null;
   paymentStatus?: PaymentStatus;
@@ -99,7 +103,8 @@ async function loadDay(q: Queryable, courseId: string, date: string) {
   const teeTimes = (
     await q.query<TeeTimeRow>(
       `SELECT t.id, t.starts_at AS "startsAt", t.max_players AS "maxPlayers", t.holes,
-              t.is_private AS "isPrivate", t.caddie_id AS "caddieId", c.display_name AS "caddieName", t.notes
+              t.is_private AS "isPrivate", t.caddie_id AS "caddieId", c.display_name AS "caddieName", t.notes,
+              t.blocked_reason AS "blockedReason", t.started_at AS "startedAt"
          FROM tee_times t LEFT JOIN caddies c ON c.id = t.caddie_id
         WHERE t.course_id = $1 AND t.local_date = $2`,
       [courseId, date],
@@ -114,6 +119,8 @@ async function loadDay(q: Queryable, courseId: string, date: string) {
                   b.customer_id AS "customerId",
                   NULLIF(concat_ws(' ', cu.first_name, cu.last_name), '') AS "customerName",
                   cu.phone AS "customerPhone", cu.email AS "customerEmail", b.notes,
+                  b.checkin_status AS "checkinStatus",
+                  (SELECT count(*)::int FROM bookings nb WHERE nb.customer_id = b.customer_id AND nb.checkin_status = 'no_show' AND nb.id <> b.id) AS "customerNoShows",
                   (SELECT o.total_minor FROM orders o WHERE o.booking_id = b.id) AS "orderTotalMinor",
                   (SELECT coalesce((SELECT sum(amount_minor) FROM payments WHERE order_id = o.id AND status = 'confirmed'), 0)
                         - coalesce((SELECT sum(amount_minor) FROM refunds WHERE order_id = o.id AND status = 'confirmed'), 0)
@@ -152,6 +159,8 @@ export interface TeeSheetRow {
   holes: Holes | null;
   allowedHoles: number[];
   isPrivate: boolean;
+  blockedReason: string | null;
+  startedAt: string | null;
   caddie: { reserved: boolean; caddieId: string | null; name: string | null };
   bookings: Array<
     BookingRow & { resources: Array<{ resourceTypeId: string; code: string; name: string; quantity: number }> }
@@ -183,6 +192,8 @@ export async function getTeeSheet(q: Queryable, courseId: string, date: string):
       holes: null,
       allowedHoles: slot.allowedHoles,
       isPrivate: false,
+      blockedReason: null,
+      startedAt: null,
       caddie: { reserved: false, caddieId: null, name: null },
       bookings: [],
     });
@@ -215,10 +226,12 @@ export async function getTeeSheet(q: Queryable, courseId: string, date: string):
       inGrid: existing !== undefined,
       maxPlayers: tt.maxPlayers,
       bookedPlayers: booked,
-      remaining: remainingSeats(state),
+      remaining: tt.blockedReason ? 0 : remainingSeats(state),
       holes: state.holes,
       allowedHoles: existing?.allowedHoles ?? course.allowedHoles,
       isPrivate: booked > 0 && tt.isPrivate,
+      blockedReason: tt.blockedReason,
+      startedAt: tt.startedAt ? tt.startedAt.toISOString() : null,
       caddie: {
         reserved: allocations.some((a) => a.teeTimeId === tt.id && a.kind === 'caddie'),
         caddieId: tt.caddieId,
@@ -280,6 +293,7 @@ export async function getAvailability(
     if (!row.allowedHoles.includes(params.holes)) continue;
     if (row.bookedPlayers > 0 && (row.isPrivate || row.holes !== params.holes)) continue;
     if (row.remaining < params.players) continue;
+    if (row.blockedReason) continue;
     if (!row.caddie.reserved) {
       const ok = caddieData.every(({ rt, capacity, usages }) => {
         const p = usagePeriod(start, params.holes, course, rt.bufferMinutes);

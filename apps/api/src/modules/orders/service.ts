@@ -60,6 +60,7 @@ export async function syncOrder(tx: Tx, bookingId: string): Promise<void> {
   const { rows: [b] } = await tx.query(
     `SELECT b.id, b.club_id AS "clubId", b.customer_id AS "customerId", b.reference, b.status, b.holes,
             b.cancellation_fee_minor AS "cancellationFeeMinor", coalesce(b.currency, c.currency) AS currency,
+            b.checkin_status AS "checkinStatus", c.no_show_fee_percent AS "noShowFeePercent",
             c.tax_rate_bp AS "taxRateBp", c.prices_include_tax AS "pricesIncludeTax", c.pos_provider AS "posProvider"
        FROM bookings b JOIN clubs c ON c.id = b.club_id WHERE b.id = $1`,
     [bookingId],
@@ -81,6 +82,14 @@ export async function syncOrder(tx: Tx, bookingId: string): Promise<void> {
       [bookingId],
     );
     lines = rows.map(({ resourceCode, ...l }) => ({ ...l, sku: skuOf(l.kind, b.holes, resourceCode) }));
+    // Absence : seuls les frais d'absence restent dus si le golf n'applique pas 100 %.
+    if (b.checkinStatus === 'no_show' && b.noShowFeePercent < 100) {
+      const base = lines.reduce((n, l) => n + l.totalMinor, 0);
+      const fee = Math.round((base * b.noShowFeePercent) / 100);
+      const tax = Math.round((fee * b.taxRateBp) / (10_000 + b.taxRateBp));
+      lines = fee > 0 ? [{ kind: 'no_show_fee', sku: 'NO_SHOW_FEE', label: `Frais d'absence (${b.noShowFeePercent} %)`, quantity: 1,
+        unitAmountMinor: fee, totalMinor: fee, taxRateBp: b.taxRateBp, taxMinor: tax, payable: 'with_booking' }] : [];
+    }
   }
   const status = b.status === 'cancelled' ? 'cancelled' : 'open';
   const total = lines.reduce((n, l) => n + l.totalMinor, 0);

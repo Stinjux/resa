@@ -253,6 +253,7 @@ interface LockedTeeTime {
   maxPlayers: number;
   holes: Holes | null;
   isPrivate: boolean;
+  blockedReason: string | null;
 }
 
 async function upsertTeeTime(tx: Tx, club: Club, course: Course, slot: GridSlot, localDate: string): Promise<string> {
@@ -268,10 +269,16 @@ async function upsertTeeTime(tx: Tx, club: Club, course: Course, slot: GridSlot,
   return rows[0].id;
 }
 
+function assertNotBlocked(teeTime: LockedTeeTime): void {
+  if (teeTime.blockedReason) {
+    throw new DomainError('TEE_TIME_BLOCKED', `Départ bloqué : ${teeTime.blockedReason}`, { reason: teeTime.blockedReason });
+  }
+}
+
 async function lockTeeTimes(tx: Tx, ids: string[]): Promise<Map<string, LockedTeeTime>> {
   const { rows } = await tx.query<LockedTeeTime>(
     `SELECT id, club_id AS "clubId", course_id AS "courseId", starts_at AS "startsAt", local_date AS "localDate",
-            max_players AS "maxPlayers", holes, is_private AS "isPrivate"
+            max_players AS "maxPlayers", holes, is_private AS "isPrivate", blocked_reason AS "blockedReason"
        FROM tee_times WHERE id = ANY($1) ORDER BY id FOR UPDATE`,
     [[...new Set(ids)]],
   );
@@ -529,6 +536,7 @@ async function placeBookings(
     const teeTime = locked.get(teeTimeIds[i]!)!;
     const req = { players: r.item.players, holes: r.item.holes, isPrivate: r.item.isPrivate ?? false };
     const state = states.get(teeTime.id)!;
+    assertNotBlocked(teeTime);
     assertCanJoin(state, req);
     states.set(teeTime.id, applyJoin(state, req));
     if (state.bookedPlayers === 0) {
@@ -761,6 +769,7 @@ export async function moveBooking(
     if (!course.allowedHoles.includes(booking.holes)) {
       throw new DomainError('HOLES_NOT_ALLOWED', `Formule ${booking.holes} trous non proposée sur ce parcours.`);
     }
+    assertNotBlocked(targetTt);
     const state = await occupancy(tx, targetTt);
     assertCanJoin(state, { players: booking.players, holes: booking.holes, isPrivate: booking.isPrivate });
 

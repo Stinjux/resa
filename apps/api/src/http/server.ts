@@ -13,6 +13,7 @@ import { authRoutes } from './routes/auth.js';
 import { aiRoutes } from './routes/ai.js';
 import { configRoutes } from './routes/config.js';
 import { messagingRoutes } from './routes/messaging.js';
+import { operationsRoutes } from './routes/operations.js';
 import { orderRoutes } from './routes/orders.js';
 import { staffRoutes } from './routes/staff.js';
 import { bookingRoutes } from './routes/bookings.js';
@@ -73,6 +74,7 @@ export function buildServer(input: Omit<AppDeps, 'posRegistry' | 'ai' | 'messagi
     orderRoutes(api, deps);
     aiRoutes(api, deps);
     messagingRoutes(api, deps);
+    operationsRoutes(api, deps);
   });
 
   if (opts.webRoot && existsSync(opts.webRoot)) {

@@ -107,6 +107,7 @@ export function configRoutes(app: FastifyInstance, deps: AppDeps) {
       defaultCaddiePayment: z.enum(['on_site', 'with_booking']),
       caddieFeeSplit: z.enum(['pro_rata_players', 'equal', 'first_booking']),
       cancellationFreeHours: z.number().int().min(0).max(720), cancellationFeePercent: z.number().int().min(0).max(100),
+      noShowFeePercent: z.number().int().min(0).max(100),
       customerCanCancel: z.boolean(), onlinePayment: z.enum(['none', 'optional', 'required']),
       posProvider: z.string().nullable().refine((p) => p === null || deps.posRegistry.has(p), 'Connecteur POS non installé'),
       messagingProvider: z.string().nullable().refine((p) => p === null || deps.messaging.has(p), 'Connecteur de messagerie non installé'),

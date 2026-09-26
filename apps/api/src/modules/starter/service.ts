@@ -14,7 +14,7 @@ export async function getStarterBoard(q: Queryable, club: Club, from: string, to
     await q.query(
       `SELECT t.id, t.starts_at AS "startsAt", t.local_date AS "localDate", t.holes, t.is_private AS "isPrivate",
               t.max_players AS "maxPlayers", co.id AS "courseId", co.name AS "courseName",
-              t.caddie_id AS "caddieId", ca.display_name AS "caddieName",
+              t.caddie_id AS "caddieId", ca.display_name AS "caddieName", t.started_at AS "startedAt",
               EXISTS (SELECT 1 FROM resource_allocations a JOIN resource_types rt ON rt.id = a.resource_type_id
                        WHERE a.tee_time_id = t.id AND a.status = 'active' AND rt.kind = 'caddie') AS "caddieReserved"
          FROM tee_times t
@@ -32,6 +32,7 @@ export async function getStarterBoard(q: Queryable, club: Club, from: string, to
         await q.query(
           `SELECT b.id, b.tee_time_id AS "teeTimeId", b.reference, b.players, b.holes, b.channel,
                   b.caddie_payment AS "caddiePayment", b.due_on_site_minor AS "dueOnSiteMinor", b.notes,
+                  b.checkin_status AS "checkinStatus",
                   (SELECT o.total_minor FROM orders o WHERE o.booking_id = b.id) AS "orderTotalMinor",
                   (SELECT coalesce((SELECT sum(amount_minor) FROM payments WHERE order_id = o.id AND status = 'confirmed'), 0)
                         - coalesce((SELECT sum(amount_minor) FROM refunds WHERE order_id = o.id AND status = 'confirmed'), 0)
@@ -76,6 +77,7 @@ export async function getStarterBoard(q: Queryable, club: Club, from: string, to
       players: tb.reduce((n, b) => n + b.players, 0),
       remaining: t.isPrivate ? 0 : t.maxPlayers - tb.reduce((n, b) => n + b.players, 0),
       caddie: { reserved: t.caddieReserved, caddieId: t.caddieId, name: t.caddieName },
+      startedAt: t.startedAt ? t.startedAt.toISOString() : null,
       bookings: tb.map((b) => ({
         ...b,
         paymentStatus: paymentStatusOf(b.orderTotalMinor ?? 0, b.paidMinor ?? 0),

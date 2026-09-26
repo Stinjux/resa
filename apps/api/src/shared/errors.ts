@@ -23,7 +23,8 @@ export type DomainErrorCode =
   | 'UNIT_UNAVAILABLE'
   | 'AI_NOT_CONFIGURED'
   | 'AI_UNAVAILABLE'
-  | 'DRAFT_EXPIRED';
+  | 'DRAFT_EXPIRED'
+  | 'TEE_TIME_BLOCKED';
 
 export class DomainError extends Error {
   constructor(

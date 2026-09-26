@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { get, patch, post, type Club, type User } from '../api';
+import { download, get, patch, post, put, type Club, type User } from '../api';
 import { addDays, CHANNEL_LABEL, longDate, money, todayIn } from '../format';
 import { ErrorBox, useClubs, useCourses } from './common';
 import { CancelControl, PaymentBadge, PaymentSection } from './PaymentSection';
@@ -7,15 +7,17 @@ import { CancelControl, PaymentBadge, PaymentSection } from './PaymentSection';
 interface SheetBooking {
   id: string; reference: string; players: number; holes: number; isPrivate: boolean; channel: string;
   groupId: string | null; customerName: string | null; customerPhone: string | null; paymentStatus?: string;
+  checkinStatus: 'expected' | 'arrived' | 'no_show'; customerNoShows: number;
   resources: Array<{ code: string; name: string; quantity: number }>;
 }
 export interface SheetRow {
   teeTimeId: string | null; startsAt: string; localTime: string; inGrid: boolean; maxPlayers: number;
   bookedPlayers: number; remaining: number; holes: number | null; allowedHoles: number[]; isPrivate: boolean;
+  blockedReason: string | null; startedAt: string | null;
   caddie: { reserved: boolean; caddieId: string | null; name: string | null }; bookings: SheetBooking[];
 }
 
-type PanelState = { kind: 'new'; row: SheetRow } | { kind: 'group'; row: SheetRow } | { kind: 'booking'; id: string } | null;
+type PanelState = { kind: 'block' } | { kind: 'new'; row: SheetRow } | { kind: 'group'; row: SheetRow } | { kind: 'booking'; id: string } | null;
 
 function canManage(user: User, clubId: string) {
   return user.roles.some((r) => (r.clubId === clubId && ['club_admin', 'receptionist'].includes(r.role)) || r.role === 'org_admin');
@@ -82,6 +84,11 @@ export function TeeSheet({ user }: { user: User }) {
         <label className="check"><input type="checkbox" checked={onlyBooked} onChange={(e) => setOnlyBooked(e.target.checked)} /> Départs occupés seulement</label>
         <span className="spacer" />
         <span className="small muted">{stats.teeTimes} départs · {stats.players} joueurs · {stats.free} places libres</span>
+        <div className="row no-print" style={{ gap: 4 }}>
+          {manage && <button className="btn sm" onClick={() => setPanel({ kind: 'block' })}>🔒 Bloquer…</button>}
+          <button className="btn sm" onClick={() => window.print()}>🖨 Imprimer</button>
+          <button className="btn sm" onClick={() => courseId && download(`/api/courses/${courseId}/tee-sheet.csv?date=${date}`, `departs-${date}.csv`).catch((e) => setError(e.message))}>⬇ Excel</button>
+        </div>
       </div>
       {date && <h2 style={{ textTransform: 'capitalize' }}>{club?.name} — {longDate(date)}</h2>}
       <ErrorBox error={error} />
@@ -91,12 +98,16 @@ export function TeeSheet({ user }: { user: User }) {
             <thead><tr><th>Heure</th><th>Places</th><th>Formule</th><th>Réservations</th><th>Caddie</th></tr></thead>
             <tbody>
               {visible.map((r) => {
-                const selected = panel?.kind !== 'booking' && panel?.row.startsAt === r.startsAt;
+                const selected = (panel?.kind === 'new' || panel?.kind === 'group') && panel.row.startsAt === r.startsAt;
                 const clickable = manage && r.remaining > 0;
                 return (
-                  <tr key={r.startsAt} className={`${clickable ? 'slot' : ''} ${selected ? 'selected' : ''}`}
+                  <tr key={r.startsAt} className={`${clickable ? 'slot' : ''} ${selected ? 'selected' : ''} ${r.blockedReason ? 'blocked' : ''}`}
                     onClick={() => clickable && setPanel({ kind: 'new', row: r })}>
-                    <td className="time">{r.localTime}{!r.inGrid && <span className="badge warn"> hors grille</span>}</td>
+                    <td className="time">{r.localTime}{!r.inGrid && <span className="badge warn"> hors grille</span>}
+                      {r.startedAt && <span className="badge ok" title="Départ parti"> parti</span>}
+                      {r.blockedReason && <div className="small" style={{ fontWeight: 400 }}><span className="badge warn">🔒 {r.blockedReason}</span>
+                        {manage && <button className="btn sm no-print" style={{ marginInlineStart: 4 }} onClick={(e) => { e.stopPropagation();
+                          post(`/api/courses/${courseId}/unblock`, { date, from: r.localTime, to: r.localTime }).then(load).catch((er) => setError(er.message)); }}>Débloquer</button>}</div>}</td>
                     <td>
                       <span className="seats" title={`${r.bookedPlayers}/${r.maxPlayers}`}>
                         {Array.from({ length: r.maxPlayers }, (_, i) => (
@@ -113,6 +124,9 @@ export function TeeSheet({ user }: { user: User }) {
                           <span className="muted small">{CHANNEL_LABEL[b.channel]}</span>
                           {b.resources.length > 0 && <span className="muted small">🛒{b.resources.reduce((n, x) => n + x.quantity, 0)}</span>}
                           {b.paymentStatus && b.paymentStatus !== 'unpaid' && <PaymentBadge status={b.paymentStatus} />}
+                          {b.checkinStatus === 'arrived' && <span className="badge ok">arrivé</span>}
+                          {b.checkinStatus === 'no_show' && <span className="badge warn">absent</span>}
+                          {b.customerNoShows > 0 && <span className="badge warn" title="Absences passées de ce client">⚠ {b.customerNoShows} abs.</span>}
                         </span>
                       ))}
                     </td>
@@ -132,6 +146,9 @@ export function TeeSheet({ user }: { user: User }) {
               {manage ? 'Cliquez sur un créneau pour créer une réservation, ou sur une réservation pour la modifier, la réunir ou l\'annuler.'
                 : 'Consultation seule.'}
             </div>
+          )}
+          {panel?.kind === 'block' && courseId && (
+            <BlockPanel courseId={courseId} date={date} onDone={load} onClose={() => setPanel(null)} />
           )}
           {panel?.kind === 'new' && club && courseId && (
             <NewBookingPanel key={panel.row.startsAt} club={club} courseId={courseId} row={panel.row}
@@ -424,6 +441,13 @@ function BookingPanel({ id, rows, courseId, canManage, onChanged, onClose }: {
 
       {canManage && b.status === 'confirmed' && (
         <>
+          <h3>Accueil</h3>
+          <div className="row">
+            {([['arrived', 'Arrivé'], ['no_show', 'Absent'], ['expected', 'Attendu']] as const).map(([st, label]) => (
+              <button key={st} className={`btn sm ${row?.bookings.find((x) => x.id === b.id)?.checkinStatus === st ? 'primary' : ''}`} disabled={busy}
+                onClick={() => run(() => put(`/api/bookings/${id}/checkin`, { status: st }))}>{label}</button>
+            ))}
+          </div>
           <h3>Modifier</h3>
           <div className="grid2">
             <label>Joueurs<select value={b.players} disabled={busy}
@@ -473,3 +497,46 @@ const HISTORY_LABEL: Record<string, string> = {
   'payment.failed': 'Paiement échoué',
 };
 
+
+function BlockPanel({ courseId, date, onDone, onClose }: { courseId: string; date: string; onDone: () => void; onClose: () => void }) {
+  const [from, setFrom] = useState('08:00');
+  const [to, setTo] = useState('10:00');
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  async function act(kind: 'block' | 'unblock') {
+    setError(null);
+    try {
+      if (kind === 'block') {
+        const r = await post<{ blocked: number; withBookings: number }>(`/api/courses/${courseId}/blocks`, { date, from, to, reason });
+        setInfo(`${r.blocked} départ(s) bloqué(s)${r.withBookings ? ` — attention : ${r.withBookings} déjà réservé(s), réservations conservées` : ''}.`);
+      } else {
+        const r = await post<{ unblocked: number }>(`/api/courses/${courseId}/unblock`, { date, from, to });
+        setInfo(`${r.unblocked} départ(s) débloqué(s).`);
+      }
+      onDone();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+  return (
+    <div className="card stack">
+      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+        <h2 style={{ margin: 0 }}>Bloquer des départs</h2>
+        <button className="btn sm" onClick={onClose}>✕</button>
+      </div>
+      <p className="small muted" style={{ margin: 0 }}>Tournoi, entretien, créneau gardé… Les départs bloqués ne sont plus proposés ni réservables. Le {date}.</p>
+      <div className="grid2">
+        <label>De<input type="time" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
+        <label>À (inclus)<input type="time" value={to} onChange={(e) => setTo(e.target.value)} /></label>
+      </div>
+      <label>Motif<input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ex. Compétition, entretien du green 1" /></label>
+      <ErrorBox error={error} />
+      {info && <div className="alert ok">{info}</div>}
+      <div className="row">
+        <button className="btn primary" disabled={!reason.trim()} onClick={() => act('block')}>Bloquer</button>
+        <button className="btn" onClick={() => act('unblock')}>Débloquer la plage</button>
+      </div>
+    </div>
+  );
+}
