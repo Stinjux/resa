@@ -70,6 +70,12 @@ export const ENTITIES = {
     createOnly: { resourceTypeId: 'resource_type_id' },
     scope: 'resource_type_id IN (SELECT id FROM resource_types WHERE club_id = $CLUB)',
   },
+  'membership-plans': {
+    table: 'membership_plans',
+    columns: { name: 'name', priceCategory: 'price_category', bookingHorizonDays: 'booking_horizon_days', annualFeeMinor: 'annual_fee_minor', active: 'active' },
+    createOnly: { code: 'code' },
+    scope: 'club_id = $CLUB',
+  },
 } satisfies Record<string, EntityDef>;
 
 export type EntityName = keyof typeof ENTITIES;
@@ -202,7 +208,7 @@ export async function setCapacityOverride(
 
 /** Toute la configuration d'un golf, pour l'écran d'administration. */
 export async function getClubConfig(q: Queryable, clubId: string) {
-  const [club, courses, rules, tariffs, resourceTypes, overrides, caddies, units] = await Promise.all([
+  const [club, courses, rules, tariffs, resourceTypes, overrides, caddies, units, plans] = await Promise.all([
     q.query(`SELECT id, code, name, timezone, currency, default_locale AS "defaultLocale", prices_include_tax AS "pricesIncludeTax",
                     tax_rate_bp AS "taxRateBp", booking_horizon_days AS "bookingHorizonDays", min_lead_minutes AS "minLeadMinutes",
                     default_caddie_payment AS "defaultCaddiePayment", caddie_fee_split AS "caddieFeeSplit",
@@ -236,11 +242,13 @@ export async function getClubConfig(q: Queryable, clubId: string) {
     q.query(`SELECT u.id, u.resource_type_id AS "resourceTypeId", u.label, u.status
                FROM resource_units u JOIN resource_types rt ON rt.id = u.resource_type_id
               WHERE rt.club_id = $1 ORDER BY rt.sort_order, u.label`, [clubId]),
+    q.query(`SELECT id, code, name, price_category AS "priceCategory", booking_horizon_days AS "bookingHorizonDays",
+                    annual_fee_minor AS "annualFeeMinor", active FROM membership_plans WHERE club_id = $1 ORDER BY name`, [clubId]),
   ]);
   if (!club.rows[0]) throw new DomainError('NOT_FOUND', 'Golf introuvable.');
   return {
     club: club.rows[0], courses: courses.rows, scheduleRules: rules.rows, tariffs: tariffs.rows,
-    resourceTypes: resourceTypes.rows, capacityOverrides: overrides.rows, caddies: caddies.rows, units: units.rows,
+    resourceTypes: resourceTypes.rows, capacityOverrides: overrides.rows, caddies: caddies.rows, units: units.rows, membershipPlans: plans.rows,
   };
 }
 

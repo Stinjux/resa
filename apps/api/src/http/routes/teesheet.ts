@@ -5,6 +5,8 @@ import { getCourse } from '../../modules/catalog/repository.js';
 import { quoteNewBooking } from '../../modules/pricing/service.js';
 import { getAvailability, getOptionsAvailability, getTeeSheet } from '../../modules/teesheet/service.js';
 import { clubOf } from '../auth.js';
+import { activeMembership } from '../../modules/members/membership.js';
+import { instantToLocal } from '../../shared/time.js';
 import type { AppDeps } from '../server.js';
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -16,10 +18,16 @@ export function teeSheetRoutes(app: FastifyInstance, deps: AppDeps) {
   app.get('/api/courses/:courseId/availability', async (req) => {
     const { courseId } = courseParam.parse(req.params);
     const q = z.object({ date, players: z.coerce.number().int().min(1).max(4), holes: holesQuery }).parse(req.query);
+    // Membre connecté : réservation ouverte plus longtemps à l'avance.
+    const clubRef = await clubOf.course(deps, courseId);
+    const member = req.principal?.customerId && req.principal.organizationId === clubRef.organizationId
+      ? await activeMembership(deps.db, clubRef.id, req.principal.customerId, q.date) : null;
     const { club, course, slots } = await getAvailability(deps.db, {
       courseId, date: q.date, players: q.players, holes: q.holes, now: deps.now(), enforceBookingWindow: true,
+      horizonDays: member?.bookingHorizonDays,
     });
-    return { club: { id: club.id, name: club.name, timezone: club.timezone, currency: club.currency }, course, slots };
+    return { club: { id: club.id, name: club.name, timezone: club.timezone, currency: club.currency }, course, slots,
+      membership: member ? { planName: member.planName } : null };
   });
 
   // Public : matériel disponible pour un créneau.
@@ -55,7 +63,10 @@ export function teeSheetRoutes(app: FastifyInstance, deps: AppDeps) {
         holes: body.holes,
         isPrivate: body.isPrivate,
         caddiePayment: body.caddiePayment ?? club.defaultCaddiePayment,
-        customerCategory: can(req.principal, 'booking.manage', club) ? (body.customerCategory ?? 'standard') : 'standard',
+        customerCategory: can(req.principal, 'booking.manage', club) ? (body.customerCategory ?? 'standard')
+          : req.principal?.customerId && req.principal.organizationId === club.organizationId
+            ? ((await activeMembership(deps.db, club.id, req.principal.customerId, instantToLocal(new Date(body.startsAt), club.timezone).date))?.priceCategory ?? 'standard')
+            : 'standard',
         options: body.options,
       }),
     };

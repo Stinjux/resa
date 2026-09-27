@@ -8,7 +8,7 @@ interface SheetBooking {
   id: string; reference: string; players: number; holes: number; isPrivate: boolean; channel: string;
   groupId: string | null; customerName: string | null; customerPhone: string | null; paymentStatus?: string;
   checkinStatus: 'expected' | 'arrived' | 'no_show'; customerNoShows: number;
-  partnerName: string | null; partnerReference: string | null;
+  partnerName: string | null; partnerReference: string | null; isOpen: boolean; customerHandicap: number | null;
   resources: Array<{ code: string; name: string; quantity: number }>;
 }
 export interface SheetRow {
@@ -127,7 +127,8 @@ export function TeeSheet({ user }: { user: User }) {
                     <td>
                       {r.bookings.map((b) => (
                         <span key={b.id} className="chip" onClick={(e) => { e.stopPropagation(); setPanel({ kind: 'booking', id: b.id }); }}>
-                          <strong>{b.customerName ?? b.reference}</strong> · {b.players} j
+                          <strong>{b.customerName ?? b.reference}</strong>{b.customerHandicap !== null && <span className="small muted"> ({b.customerHandicap})</span>} · {b.players} j
+                          {b.isOpen && <span className="badge ok" title="Partie ouverte : d'autres golfeurs peuvent rejoindre">🤝</span>}
                           <span className="muted small">{CHANNEL_LABEL[b.channel]}</span>
                           {b.partnerName && <span className="badge" title={b.partnerReference ? `Voucher ${b.partnerReference}` : undefined}>🧳 {b.partnerName}</span>}
                           {b.resources.length > 0 && <span className="muted small">🛒{b.resources.reduce((n, x) => n + x.quantity, 0)}</span>}

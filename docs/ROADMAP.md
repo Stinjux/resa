@@ -35,6 +35,7 @@ Chaque étape livre un logiciel fonctionnel et testé.
 | 12 | **Facturation et caisse** : reçus, factures aux mentions légales marocaines (ICE, IF, RC, patente) à numérotation continue, avoirs, clôture de caisse (Z) avec comptage des espèces, export comptable (voir `docs/FACTURATION.md`) | ✅ livré |
 | 13 | **Tour-opérateurs et agences** : partenaires à tarifs négociés, voucher, allotements avec release automatique, portail partenaire, relevé de compte (voir `docs/PARTENAIRES.md`) | ✅ livré |
 | 14 | **Équipe** : comptes du personnel, rôles par golf, mot de passe provisoire à changer, réinitialisation, désactivation immédiate, changement de son mot de passe | ✅ livré |
+| 15 | **Membres et application golfeur** : abonnements (tarif, réservation anticipée), profil avec index, parties ouvertes à rejoindre, historique des parties avec partenaires, version mobile installable (voir `docs/MEMBRES.md`) | ✅ livré |
 
 ## Suites possibles
 

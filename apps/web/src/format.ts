@@ -17,6 +17,11 @@ export function addDays(date: string, n: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** « mar. 29 sept. » : date courte lisible (écrans mobiles). */
+export function shortDate(date: string): string {
+  return new Intl.DateTimeFormat(currentIntl(), { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(`${date}T12:00:00Z`));
+}
+
 export function longDate(date: string): string {
   return new Intl.DateTimeFormat(currentIntl(), { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(
     new Date(`${date}T12:00:00Z`),

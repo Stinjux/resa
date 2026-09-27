@@ -95,6 +95,8 @@ interface BookingRow {
   customerEmail: string | null;
   partnerName: string | null;
   partnerReference: string | null;
+  isOpen: boolean;
+  customerHandicap: number | null;
   notes: string | null;
   checkinStatus: 'expected' | 'arrived' | 'no_show';
   customerNoShows: number;
@@ -127,6 +129,7 @@ async function loadDay(q: Queryable, courseId: string, date: string) {
                   NULLIF(concat_ws(' ', cu.first_name, cu.last_name), '') AS "customerName",
                   cu.phone AS "customerPhone", cu.email AS "customerEmail", b.notes,
                   pa.name AS "partnerName", b.partner_reference AS "partnerReference",
+                  b.is_open AS "isOpen", cu.handicap_index::float AS "customerHandicap",
                   b.checkin_status AS "checkinStatus",
                   (SELECT count(*)::int FROM bookings nb WHERE nb.customer_id = b.customer_id AND nb.checkin_status = 'no_show' AND nb.id <> b.id) AS "customerNoShows",
                   (SELECT o.total_minor FROM orders o WHERE o.booking_id = b.id) AS "orderTotalMinor",
@@ -275,7 +278,9 @@ export interface AvailableSlot {
  */
 export async function getAvailability(
   q: Queryable,
-  params: { courseId: string; date: string; players: number; holes: Holes; now: Date; enforceBookingWindow: boolean; partnerId?: string | null },
+  params: { courseId: string; date: string; players: number; holes: Holes; now: Date; enforceBookingWindow: boolean; partnerId?: string | null;
+    /** Horizon de réservation propre (ex. membre) ; par défaut celui du golf. */
+    horizonDays?: number },
 ): Promise<{ club: Club; course: Course; slots: AvailableSlot[] }> {
   const sheet = await getTeeSheet(q, params.courseId, params.date);
   const { club, course } = sheet;
@@ -299,7 +304,7 @@ export async function getAvailability(
     : [];
 
   const earliest = params.now.getTime() + (params.enforceBookingWindow ? club.minLeadMinutes * 60_000 : 0);
-  const latest = params.now.getTime() + club.bookingHorizonDays * 86_400_000;
+  const latest = params.now.getTime() + Math.max(club.bookingHorizonDays, params.horizonDays ?? 0) * 86_400_000;
 
   const slots: AvailableSlot[] = [];
   for (const row of grid) {

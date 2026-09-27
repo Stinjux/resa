@@ -5,7 +5,7 @@ import { EntityForm, weekdaysLabel, type Field } from './EntityForm';
 import { ErrorBox, useClubs } from './common';
 import { PartnersTab } from './Partners';
 
-type Tab = 'general' | 'schedule' | 'tariffs' | 'resources' | 'partners' | 'emails' | 'pos';
+type Tab = 'general' | 'schedule' | 'tariffs' | 'resources' | 'members' | 'partners' | 'emails' | 'pos';
 
 export function Config({ user }: { user: User }) {
   const [clubsVersion, setClubsVersion] = useState(0);
@@ -40,7 +40,7 @@ export function Config({ user }: { user: User }) {
         )}
         {isOrgAdmin && <button className="btn sm" onClick={() => setCreating(true)}>+ Nouveau golf</button>}
         <nav className="nav">
-          {([['general', 'Général'], ['schedule', 'Parcours & horaires'], ['tariffs', 'Tarifs'], ['resources', 'Caddies & matériel'], ['partners', 'Partenaires'], ['emails', 'E-mails'], ['pos', 'Caisse (POS)']] as Array<[Tab, string]>)
+          {([['general', 'Général'], ['schedule', 'Parcours & horaires'], ['tariffs', 'Tarifs'], ['resources', 'Caddies & matériel'], ['members', 'Membres'], ['partners', 'Partenaires'], ['emails', 'E-mails'], ['pos', 'Caisse (POS)']] as Array<[Tab, string]>)
             .map(([t, l]) => <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{l}</button>)}
         </nav>
       </div>
@@ -75,6 +75,7 @@ export function Config({ user }: { user: User }) {
       {cfg && tab === 'schedule' && <Schedule cfg={cfg} base={base} save={save} />}
       {cfg && tab === 'tariffs' && <Tariffs cfg={cfg} save={save} />}
       {cfg && tab === 'resources' && <Resources cfg={cfg} base={base} save={save} reload={load} />}
+      {cfg && tab === 'members' && <MembershipPlans cfg={cfg} save={save} />}
       {cfg && tab === 'partners' && <PartnersTab cfg={cfg} clubId={clubId!}
         categories={[...new Set<string>(cfg.tariffs.map((t: any) => t.customerCategory).filter(Boolean))]} />}
       {cfg && tab === 'emails' && <Emails clubId={clubId!} enabled={cfg.club.emailEnabled} />}
@@ -261,6 +262,31 @@ function GridPreview({ cfg, base }: { cfg: any; base: string }) {
 }
 
 // ---------------------------------------------------------------------------
+
+function MembershipPlans({ cfg, save }: { cfg: any; save: Save }) {
+  const cur = cfg.club.currency;
+  const fields: Field[] = [
+    { key: 'code', label: 'Code', type: 'text', nullable: false, createOnly: true },
+    { key: 'name', label: 'Nom', type: 'text', nullable: false },
+    { key: 'priceCategory', label: 'Catégorie tarifaire', type: 'text', nullable: false, hint: 'Ex. member : créer les tarifs de cette catégorie (onglet Tarifs), 0 si green fee inclus' },
+    { key: 'bookingHorizonDays', label: 'Réservation en ligne jusqu\'à (jours)', type: 'number', hint: `Public : ${cfg.club.bookingHorizonDays} jours` },
+    { key: 'annualFeeMinor', label: `Cotisation annuelle (${cur}, information)`, type: 'money' },
+    { key: 'active', label: 'Active', type: 'checkbox' },
+  ];
+  return (
+    <div className="stack">
+      <Editable title="Formules d'abonnement" entity="membership-plans" save={save} items={cfg.membershipPlans} fields={fields}
+        newValues={{ priceCategory: 'member', bookingHorizonDays: 21, active: true }}
+        columns={['Formule', 'Tarif', 'Réservation', 'Cotisation']}
+        render={(p) => [
+          <><strong>{p.name}</strong> <span className="small muted">{p.code}</span>{!p.active && <span className="badge"> inactive</span>}</>,
+          `catégorie ${p.priceCategory}`, `jusqu'à ${p.bookingHorizonDays} j`, p.annualFeeMinor !== null ? money(p.annualFeeMinor, cur) : '—',
+        ]} />
+      <p className="small muted">Les membres sont inscrits par la réception (menu Membres). Pendant la validité de leur abonnement, leurs réservations
+        (en ligne ou à la réception) prennent le tarif de la catégorie et ils peuvent réserver plus longtemps à l'avance.</p>
+    </div>
+  );
+}
 
 function Tariffs({ cfg, save }: { cfg: any; save: Save }) {
   const cur = cfg.club.currency;

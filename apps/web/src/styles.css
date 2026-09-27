@@ -196,3 +196,38 @@ table.sheet { width: 100%; border-collapse: collapse; }
   body.printing-doc .doc-toolbar { display: none; }
   body.printing-doc .doc-paper { padding: 0; max-width: none; }
 }
+
+/* Espace golfeur (mobile d'abord) */
+.golfer { max-width: 680px; margin: 0 auto; width: 100%; }
+.btn.block { width: 100%; }
+.game { display: flex; flex-direction: column; gap: 10px; }
+.game-head { display: flex; align-items: center; gap: 12px; }
+.game-time { font-size: 26px; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
+.players { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.players li { display: flex; align-items: center; gap: 10px; }
+.players li.free { opacity: .6; }
+.avatar { width: 30px; height: 30px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  background: var(--accent-soft); color: var(--accent); font-weight: 700; flex: none; }
+.players li.free .avatar { background: var(--surface-2); color: var(--muted); border: 1px dashed var(--border); }
+.hcp { display: inline-block; min-width: 38px; text-align: center; padding: 1px 6px; margin-inline-start: 6px; border-radius: 999px;
+  background: var(--surface-2); border: 1px solid var(--border); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.chip-lite { display: inline-flex; align-items: center; margin: 2px 6px 2px 0; }
+.member-card { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
+.segmented { background: var(--surface-2); padding: 4px; border-radius: 999px; align-self: flex-start; }
+.segmented button { border-radius: 999px; }
+.bottom-nav { display: none; }
+@media (max-width: 700px) {
+  main { padding: 12px !important; }
+  .golfer-top .nav { display: none; }
+  .golfer-top .who { display: none; }
+  body:has(.bottom-nav) main { padding-bottom: 84px !important; }
+  .bottom-nav { display: flex; position: fixed; inset-inline: 0; bottom: 0; z-index: 20; background: var(--surface);
+    border-top: 1px solid var(--border); padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); }
+  .bottom-nav button { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; background: none; border: 0;
+    color: var(--muted); font: inherit; font-size: 11px; padding: 4px 0; cursor: pointer; }
+  .bottom-nav button span { font-size: 20px; line-height: 1; }
+  .bottom-nav button.active { color: var(--accent); font-weight: 700; }
+  .grid2 { grid-template-columns: 1fr !important; }
+}
+@media print { .bottom-nav { display: none !important; } }

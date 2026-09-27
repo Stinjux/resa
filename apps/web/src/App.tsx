@@ -9,13 +9,16 @@ import { Inbox } from './pages/Inbox';
 import { Cash } from './pages/Cash';
 import { PartnerPortal } from './pages/PartnerPortal';
 import { ChangePassword, Team } from './pages/Team';
+import { Members } from './pages/Members';
+import { OpenGames } from './pages/OpenGames';
+import { Profile } from './pages/Profile';
 import { Reports } from './pages/Reports';
 import { Login } from './pages/Login';
 import { MyBookings } from './pages/MyBookings';
 import { StarterBoard } from './pages/StarterBoard';
 import { TeeSheet } from './pages/TeeSheet';
 
-type Page = 'book' | 'sheet' | 'starter' | 'mine' | 'config' | 'assistant' | 'reports' | 'inbox' | 'cash' | 'partner' | 'team' | 'password' | 'login';
+type Page = 'book' | 'sheet' | 'starter' | 'mine' | 'config' | 'assistant' | 'reports' | 'inbox' | 'cash' | 'partner' | 'team' | 'password' | 'open' | 'profile' | 'members' | 'login';
 
 export function hasRole(user: User | null, roles: string[]): boolean {
   return !!user?.roles.some((r) => roles.includes(r.role));
@@ -44,6 +47,7 @@ export function App() {
     if (hasRole(u, ['org_admin', 'club_admin', 'receptionist'])) setPage('sheet');
     else if (hasRole(u, ['starter'])) setPage('starter');
     else if (u.partnerId) setPage('partner');
+    else if (u.customerId) setPage('mine');
     else setPage('book');
   }
 
@@ -66,14 +70,17 @@ export function App() {
     ['config', t('nav.config'), hasRole(user, ['org_admin', 'club_admin'])],
     ['team', 'Équipe', hasRole(user, ['org_admin', 'club_admin'])],
     ['partner', t('nav.partner'), !!user?.partnerId],
+    ['members', 'Membres', hasRole(user, ['org_admin', 'club_admin', 'receptionist'])],
     ['book', t('nav.book'), !user || !!user.customerId],
+    ['open', t('nav.openGames'), !!user?.customerId],
     ['mine', t('nav.mine'), !!user?.customerId],
+    ['profile', t('nav.profile'), !!user?.customerId],
   ];
 
   if (!ready) return null;
   return (
     <>
-      <header className="topbar">
+      <header className={`topbar${user?.customerId ? ' golfer-top' : ''}`}>
         <span className="brand">⛳ Resa Golf</span>
         <nav className="nav">
           {tabs.filter(([, , show]) => show && !user?.mustChangePassword).map(([p, label]) => (
@@ -111,9 +118,20 @@ export function App() {
         {page === 'cash' && user && <Cash user={user} />}
         {page === 'partner' && user?.partnerId && <PartnerPortal user={user} />}
         {page === 'team' && user && <Team user={user} />}
+        {page === 'open' && user && <OpenGames user={user} />}
+        {page === 'profile' && user?.customerId && <Profile />}
+        {page === 'members' && user && <Members user={user} />}
         {page === 'password' && user && <ChangePassword required={false} onDone={() => undefined} />}
         </>}
       </main>
+      {user?.customerId && !user.mustChangePassword && (
+        <nav className="bottom-nav">
+          {([['book', '⛳', t('nav.book')], ['open', '🤝', t('nav.openGames')], ['mine', '📋', t('nav.mine')], ['profile', '👤', t('nav.profile')]] as Array<[Page, string, string]>)
+            .map(([p, icon, label]) => (
+              <button key={p} className={page === p ? 'active' : ''} onClick={() => setPage(p)}><span aria-hidden>{icon}</span>{label}</button>
+            ))}
+        </nav>
+      )}
     </>
   );
 }

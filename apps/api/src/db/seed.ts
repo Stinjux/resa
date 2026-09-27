@@ -10,6 +10,7 @@ import { loadConfig } from '../config.js';
 import { createPool, withTransaction, type Db } from './pool.js';
 import { createStaffUser, registerCustomer } from '../modules/auth/service.js';
 import { createAllotment, createPartnerUser, savePartner } from '../modules/partners/service.js';
+import { createMembership } from '../modules/members/service.js';
 import { createBooking, createGroupBooking, moveBooking } from '../modules/booking/service.js';
 import { recordStaffPayment } from '../modules/orders/service.js';
 import { assignCaddie, assignUnits } from '../modules/starter/service.js';
@@ -97,6 +98,7 @@ async function seedConfig(db: Db): Promise<{ orgId: string; clubs: Array<{ id: s
                 ($1, 'green_fee', 'Green fee 18 trous résident', 18, 'resident', NULL, NULL, NULL, $8, 'per_player', 2),
                 ($1, 'green_fee', 'Green fee 9 trous résident', 9, 'resident', NULL, NULL, NULL, $9, 'per_player', 2),
                 ($1, 'green_fee', 'Green fee 18 trous tour-opérateur', 18, 'to', NULL, NULL, NULL, $11, 'per_player', 2),
+                ($1, 'green_fee', 'Green fee membre (inclus dans l''abonnement)', NULL, 'member', NULL, NULL, NULL, 0, 'per_player', 3),
                 ($1, 'green_fee', 'Green fee 9 trous tour-opérateur', 9, 'to', NULL, NULL, NULL, $12, 'per_player', 2),
                 ($1, 'private_surcharge', 'Supplément départ privé', NULL, NULL, NULL, NULL, NULL, $10, 'per_booking', 0)`,
         [clubId, MAD(gf18), MAD(gf18 + 150), MAD(Math.round(gf18 * 0.7 / 10) * 10), MAD(gf9), MAD(gf9 + 100),
@@ -263,6 +265,52 @@ async function seedPartner(db: Db, orgId: string, club: { id: string; courseId: 
   }
 }
 
+/** Membres, profils golfeurs (index), parties ouvertes à venir et historique. */
+async function seedMembers(db: Db, orgId: string, clubs: Array<{ id: string; code: string; courseId: string }>) {
+  const actor = { type: 'system' as const };
+  const tz = 'Africa/Casablanca';
+  const today = DateTime.now().setZone(tz);
+  for (const c of clubs) {
+    await db.query(`INSERT INTO membership_plans (club_id, code, name, price_category, booking_horizon_days, annual_fee_minor)
+                    VALUES ($1, 'ANNUEL', 'Membre annuel', 'member', 30, $2)`, [c.id, MAD(28000)]);
+  }
+  const g1 = clubs[0]!;
+  const plan = (await db.query(`SELECT id FROM membership_plans WHERE club_id = $1`, [g1.id])).rows[0].id;
+  const golfer = async (first: string, last: string, hcp: number, share = true) => (await db.query(
+    `INSERT INTO customers (organization_id, first_name, last_name, handicap_index, share_profile) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+    [orgId, first, last, hcp, share])).rows[0].id as string;
+  const me = (await db.query(`SELECT customer_id FROM users WHERE email = 'client@demo.ma'`)).rows[0].customer_id as string;
+  await db.query(`UPDATE customers SET handicap_index = 18.4, share_profile = true, licence_number = 'FRMG-DEMO-001' WHERE id = $1`, [me]);
+  const karim = await golfer('Karim', 'Benali', 12.4);
+  const leila = await golfer('Leila', 'Chraibi', 24.1);
+  const hamza = await golfer('Hamza', 'Idrissi', 6.8);
+  const anon = await golfer('Sara', 'Discrète', 30, false);
+  for (const [who, card] of [[me, 'G1-M-0001'], [karim, 'G1-M-0002'], [hamza, 'G1-M-0003']] as const) {
+    await createMembership(db, { id: g1.id, organizationId: orgId }, { customerId: who, planId: plan, cardNumber: card,
+      validFrom: today.startOf('year').toISODate()!, validTo: today.endOf('year').toISODate()! }, actor);
+  }
+  const at = (days: number, time: string) => DateTime.fromISO(`${today.plus({ days }).toISODate()}T${time}`, { zone: tz }).toJSDate();
+  const book = async (customerId: string, days: number, time: string, players: number, open = false, note: string | null = null, holes: 9 | 18 = 18) => {
+    const now = days < 0 ? at(days - 1, '12:00') : new Date(); // parties passées : réservées « la veille »
+    try {
+      return await createBooking({ db, now: () => now }, { channel: 'phone', actor, customerId },
+        { courseId: g1.courseId, startsAt: at(days, time), players, holes, isOpen: open, openNote: note });
+    } catch { return null; } // créneau déjà pris dans les données de démo : on ignore
+  };
+  // Parties ouvertes à venir.
+  await book(karim, 2, '09:30', 2, true, 'Partie amicale, tous niveaux');
+  await book(anon, 2, '09:30', 1);
+  await book(leila, 3, '10:30', 1, true, 'Cherche partenaires pour un 18 trous tranquille');
+  await book(hamza, 5, '07:30', 2, true, 'Rythme soutenu, index < 15 idéalement');
+  await book(me, 4, '11:00', 2, true);
+  // Historique du client de démo, avec ses partenaires de jeu.
+  for (const [days, time, others] of [[-3, '08:30', [karim]], [-10, '09:00', [leila, anon]], [-24, '14:00', [hamza]]] as const) {
+    const b = await book(me, days, time, 1);
+    for (const o of others) await book(o, days, time, 1);
+    if (b) await db.query(`UPDATE bookings SET checkin_status = 'arrived' WHERE tee_time_id = $1`, [b.booking.teeTime.id]);
+  }
+}
+
 export async function seedDemo(db: Db): Promise<boolean> {
   const existing = await db.query(`SELECT 1 FROM organizations WHERE code = 'DEMO-MA'`);
   if (existing.rowCount) return false;
@@ -273,6 +321,7 @@ export async function seedDemo(db: Db): Promise<boolean> {
   await seedBookings(db, clubs[0]!);
   await seedWhatsAppRequest(db, clubs[0]!);
   await seedPartner(db, orgId, clubs[0]!);
+  await seedMembers(db, orgId, clubs);
   return true;
 }
 

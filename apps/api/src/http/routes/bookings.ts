@@ -33,6 +33,8 @@ const item = z.object({
   notes: z.string().max(2000).nullable().optional(),
   customerCategory: z.string().max(40).optional(),
   caddiePayment: caddiePayment.optional(),
+  isOpen: z.boolean().optional(),
+  openNote: z.string().max(200).nullable().optional(),
 });
 const customer = z.object({
   firstName: z.string().max(120).nullable().optional(),

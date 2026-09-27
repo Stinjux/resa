@@ -87,6 +87,9 @@ Servie par le serveur de l'API une fois compilée (`npm start`) :
   réception ou la direction** avant réservation ; confirmation envoyée au client (voir `docs/MESSAGERIE.md`)
 - **Caisse** (réception, direction) : reçus, factures et avoirs imprimables (PDF), clôture de caisse (Z)
   avec écart d'espèces, journal et export comptable (voir `docs/FACTURATION.md`)
+- **Application golfeur (mobile)** : réserver, **parties ouvertes** (voir l'heure, les joueurs et leurs
+  index, rejoindre), historique des parties avec partenaires, profil (index, licence), installable
+  sur le téléphone ; **membres** avec tarif et réservation anticipée (voir `docs/MEMBRES.md`)
 - **Équipe** (direction, administrateur) : créer les comptes du personnel avec leurs rôles par golf,
   mot de passe provisoire à changer à la première connexion, réinitialisation, désactivation
   (déconnexion immédiate). La direction d'un golf ne gère que les comptes de ses golfs.

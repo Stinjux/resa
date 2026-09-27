@@ -52,6 +52,10 @@ const SCHEMAS = {
   'resource-units': z.object({
     resourceTypeId: z.uuid(), label: z.string().min(1).max(40), status: z.enum(['available', 'maintenance', 'retired']),
   }),
+  'membership-plans': z.object({
+    code, name: z.string().min(1).max(100), priceCategory: z.string().min(1).max(40), bookingHorizonDays: z.number().int().min(1).max(730),
+    annualFeeMinor: money.nullable(), active: z.boolean(),
+  }),
 } satisfies Record<EntityName, z.ZodObject>;
 
 const REQUIRED_ON_CREATE: Record<EntityName, string[]> = {
@@ -61,6 +65,7 @@ const REQUIRED_ON_CREATE: Record<EntityName, string[]> = {
   'resource-types': ['code', 'kind', 'name', 'totalQuantity'],
   caddies: ['displayName'],
   'resource-units': ['resourceTypeId', 'label'],
+  'membership-plans': ['code', 'name', 'priceCategory'],
 };
 
 const entityParam = z.enum(Object.keys(ENTITIES) as [EntityName, ...EntityName[]]);

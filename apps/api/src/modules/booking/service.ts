@@ -23,6 +23,7 @@ import {
 import { audit, type Actor } from '../../shared/audit.js';
 import { DomainError } from '../../shared/errors.js';
 import { instantToLocal } from '../../shared/time.js';
+import { activeMembership } from '../members/membership.js';
 import {
   getClub,
   getCourse,
@@ -64,6 +65,9 @@ export interface BookingItemInput {
   customerCategory?: string;
   /** Caddie payé avec la réservation ou sur place (défaut : réglage du golf). */
   caddiePayment?: Payable;
+  /** Partie ouverte : d'autres golfeurs peuvent rejoindre ce départ. */
+  isOpen?: boolean;
+  openNote?: string | null;
 }
 
 export interface CustomerInput {
@@ -138,6 +142,8 @@ export interface BookingDetail {
   players: number;
   holes: Holes;
   isPrivate: boolean;
+  isOpen: boolean;
+  openNote: string | null;
   groupId: string | null;
   notes: string | null;
   customerId: string | null;
@@ -169,7 +175,7 @@ export interface BookingDetail {
 export async function getBooking(q: Db | Tx, bookingId: string): Promise<BookingDetail> {
   const { rows } = await q.query(
     `SELECT b.id, b.reference, b.club_id AS "clubId", b.status, b.channel, b.players, b.holes,
-            b.is_private AS "isPrivate", b.group_id AS "groupId", b.notes, b.customer_id AS "customerId",
+            b.is_private AS "isPrivate", b.is_open AS "isOpen", b.open_note AS "openNote", b.group_id AS "groupId", b.notes, b.customer_id AS "customerId",
             b.created_at AS "createdAt", b.cancelled_at AS "cancelledAt",
             b.customer_category AS "customerCategory", b.caddie_payment AS "caddiePayment",
             b.currency, b.total_minor AS "totalMinor", b.due_with_booking_minor AS "dueWithBookingMinor",
@@ -211,6 +217,8 @@ export async function getBooking(q: Db | Tx, bookingId: string): Promise<Booking
     players: b.players,
     holes: b.holes,
     isPrivate: b.isPrivate,
+    isOpen: b.isOpen,
+    openNote: b.openNote,
     groupId: b.groupId,
     notes: b.notes,
     customerId: b.customerId,
@@ -448,7 +456,7 @@ async function resolveSlot(
   return { slot, localDate };
 }
 
-function assertBookingWindow(club: Club, startsAt: Date, now: Date, channel: Channel): void {
+function assertBookingWindow(club: Club, startsAt: Date, now: Date, channel: Channel, horizonDays = club.bookingHorizonDays): void {
   if (startsAt.getTime() <= now.getTime()) {
     throw new DomainError('OUTSIDE_BOOKING_WINDOW', 'Ce départ est déjà passé.');
   }
@@ -456,7 +464,7 @@ function assertBookingWindow(club: Club, startsAt: Date, now: Date, channel: Cha
   if (startsAt.getTime() < now.getTime() + club.minLeadMinutes * 60_000) {
     throw new DomainError('OUTSIDE_BOOKING_WINDOW', 'Délai minimal de réservation dépassé.');
   }
-  if (startsAt.getTime() > now.getTime() + club.bookingHorizonDays * 86_400_000) {
+  if (startsAt.getTime() > now.getTime() + horizonDays * 86_400_000) {
     throw new DomainError('OUTSIDE_BOOKING_WINDOW', 'Date au-delà de la période de réservation ouverte.');
   }
 }
@@ -510,7 +518,11 @@ async function placeBookings(
     courses.set(course.id, course);
     club ??= await getClub(tx, course.clubId);
     if (course.clubId !== club.id) throw new DomainError('VALIDATION', 'Tous les départs doivent être dans le même golf.');
-    assertBookingWindow(club, item.startsAt, now, ctx.channel);
+    // Membre : réservation ouverte plus longtemps à l'avance.
+    const member = ctx.channel === 'web' && ctx.customerId
+      ? await activeMembership(tx, club.id, ctx.customerId, instantToLocal(item.startsAt, club.timezone).date) : null;
+    assertBookingWindow(club, item.startsAt, now, ctx.channel, Math.max(club.bookingHorizonDays, member?.bookingHorizonDays ?? 0));
+    if (item.isOpen && item.isPrivate) throw new DomainError('VALIDATION', 'Un départ privé ne peut pas être une partie ouverte.');
     const { slot, localDate } = await resolveSlot(tx, club, course, item.startsAt, gridCache);
     if (!slot.allowedHoles.includes(item.holes)) {
       throw new DomainError('HOLES_NOT_ALLOWED', `Formule ${item.holes} trous non proposée sur ce créneau.`);
@@ -562,11 +574,12 @@ async function placeBookings(
     }
 
     const reference = await nextReference(tx, theClub);
+    const membership = customerId && !partner ? await activeMembership(tx, theClub.id, customerId, r.localDate) : null;
     const idempotencyKey = ctx.idempotencyKey ? (i === 0 ? ctx.idempotencyKey : `${ctx.idempotencyKey}#${i}`) : null;
     const { rows } = await tx.query(
       `INSERT INTO bookings (reference, club_id, tee_time_id, customer_id, channel, players, holes, is_private,
-                             group_id, notes, idempotency_key, customer_category, caddie_payment, partner_id, partner_reference)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id`,
+                             group_id, notes, idempotency_key, customer_category, caddie_payment, partner_id, partner_reference, is_open, open_note)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING id`,
       [
         reference,
         theClub.id,
@@ -579,11 +592,16 @@ async function placeBookings(
         groupId,
         r.item.notes ?? null,
         idempotencyKey,
-        // Partenaire : ses tarifs négociés, toujours.
-        partner ? partner.priceCategory : ctx.channel === 'web' ? 'standard' : (r.item.customerCategory ?? 'standard'),
+        // Partenaire : ses tarifs négociés, toujours. Membre : tarif de sa formule, sauf autre catégorie choisie par le personnel.
+        partner ? partner.priceCategory
+          : (ctx.channel === 'web' || !r.item.customerCategory || r.item.customerCategory === 'standard') && membership?.priceCategory
+            ? membership.priceCategory
+            : ctx.channel === 'web' ? 'standard' : (r.item.customerCategory ?? 'standard'),
         r.item.caddiePayment ?? theClub.defaultCaddiePayment,
         partner?.id ?? null,
         ctx.partnerReference?.trim() || null,
+        !!r.item.isOpen,
+        r.item.isOpen ? (r.item.openNote?.trim().slice(0, 200) || null) : null,
       ],
     );
     const bookingId: string = rows[0].id;

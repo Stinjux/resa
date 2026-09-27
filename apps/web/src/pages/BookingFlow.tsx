@@ -24,6 +24,9 @@ export function BookingFlow({ user, onDone }: { user: User | null; onDone: () =>
   const [options, setOptions] = useState<Option[]>([]);
   const [qty, setQty] = useState<Record<string, number>>({});
   const [isPrivate, setIsPrivate] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
+  const [openNote, setOpenNote] = useState('');
+  const [membership, setMembership] = useState<{ planName: string } | null>(null);
   const [caddiePayment, setCaddiePayment] = useState<'on_site' | 'with_booking'>('on_site');
   const [contact, setContact] = useState({ firstName: '', lastName: '', email: '', phone: '' });
   const [quote, setQuote] = useState<Quote | null>(null);
@@ -43,8 +46,8 @@ export function BookingFlow({ user, onDone }: { user: User | null; onDone: () =>
     setSlot(null);
     setSlots(null);
     if (!courseId || !date) return;
-    get<{ slots: Slot[] }>(`/api/courses/${courseId}/availability?date=${date}&players=${players}&holes=${holes}`)
-      .then((r) => setSlots(r.slots))
+    get<{ slots: Slot[]; membership: { planName: string } | null }>(`/api/courses/${courseId}/availability?date=${date}&players=${players}&holes=${holes}`)
+      .then((r) => { setSlots(r.slots); setMembership(r.membership ?? null); })
       .catch((e) => setError(errorText(t, e)));
   }, [courseId, date, holes, players, reload]);
 
@@ -80,6 +83,7 @@ export function BookingFlow({ user, onDone }: { user: User | null; onDone: () =>
         '/api/bookings',
         {
           courseId, startsAt: slot.startsAt, players, holes, isPrivate, caddiePayment, options: optionList,
+          isOpen: !!user && isOpen && !isPrivate, openNote: isOpen ? openNote || null : null,
           ...(user?.customerId ? {} : {
             customer: { firstName: contact.firstName || null, lastName: contact.lastName, email: contact.email || null, phone: contact.phone || null, preferredLocale: locale },
           }),
@@ -175,6 +179,11 @@ export function BookingFlow({ user, onDone }: { user: User | null; onDone: () =>
             <label className="check"><input type="checkbox" checked={isPrivate} onChange={(e) => setIsPrivate(e.target.checked)} />
               {t('book.private')}</label>
           )}
+          {user && !isPrivate && players < 4 && <>
+            <label className="check"><input type="checkbox" checked={isOpen} onChange={(e) => setIsOpen(e.target.checked)} /> {t('book.open')}</label>
+            {isOpen && <input placeholder={t('mine.openNote')} value={openNote} maxLength={200} onChange={(e) => setOpenNote(e.target.value)} />}
+          </>}
+          {membership && <div><span className="badge ok">{t('book.member', { plan: membership.planName })}</span></div>}
           <div>
             <div className="small muted">{t('book.caddie')}</div>
             <label className="check"><input type="radio" checked={caddiePayment === 'on_site'} onChange={() => setCaddiePayment('on_site')} /> {t('book.caddieOnSite')}</label>
