@@ -162,7 +162,7 @@ export function Assistant() {
       <form className="composer" onSubmit={(e) => { e.preventDefault(); send(text); }}>
         <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Ex. book moi 2 départs à 13h le 25 mars pour M. Alami, 4 joueurs, 18 trous"
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(text); } }} rows={2} aria-label="Message" />
-        <button className="btn primary" disabled={busy || !text.trim()}>Envoyer</button>
+        <button className="btn" disabled={busy || !text.trim()}>Envoyer</button>
       </form>
       {status?.model && <p className="small muted" style={{ margin: 0 }}>Modèle : {status.model}. Les demandes sont traitées par l'API d'Anthropic.</p>}
     </div>

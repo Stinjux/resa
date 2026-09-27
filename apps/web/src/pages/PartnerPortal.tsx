@@ -94,7 +94,7 @@ export function PartnerPortal({ user }: { user: User }) {
           {slots?.length === 0 && <div className="muted">{t('pt.noSlot')}</div>}
         </div>
         {slot && (
-          <div className="card stack" style={{ background: 'var(--surface-2)' }}>
+          <div className="card stack" style={{ background: 'var(--color-surface-muted)' }}>
             <strong>{date} · {slot.localTime} · {players} × {holes}</strong>
             <div className="grid2">
               <label>{t('pt.voucher')}<input value={form.voucher} onChange={(e) => setForm({ ...form, voucher: e.target.value })} /></label>

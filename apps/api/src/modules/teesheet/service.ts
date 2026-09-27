@@ -2,6 +2,7 @@
 // (départs créés, réservations, caddie, matériel).
 
 import type { Queryable } from '../../db/pool.js';
+import { selectTariff } from '../../domain/pricing.js';
 import { generateDaySlots } from '../../domain/schedule.js';
 import { available, usagePeriod } from '../../domain/resource-usage.js';
 import { remainingSeats, type Holes, type TeeTimeState } from '../../domain/tee-time-rules.js';
@@ -13,6 +14,7 @@ import {
   getCourse,
   listResourceTypes,
   listScheduleRules,
+  listTariffs,
   type Club,
   type Course,
   type ResourceType,
@@ -269,6 +271,14 @@ export interface AvailableSlot {
   canBePrivate: boolean;
   /** Places de l'allotement du partenaire qui cherche. */
   heldForPartner?: boolean;
+  /** État d'affichage (toujours 'available' sauf avec includeUnavailable). */
+  state: 'available' | 'full' | 'blocked';
+  /** Motif d'un départ bloqué (tournoi, entretien…) ; « Réservé » pour un allotement. */
+  reason?: string | null;
+  /** Ouvert uniquement grâce à l'abonnement (au-delà de l'horizon public). */
+  membersOnly?: boolean;
+  /** Green fee inférieur au plus cher du jour (heures creuses), en %. */
+  discountPercent?: number | null;
 }
 
 /**
@@ -280,7 +290,11 @@ export async function getAvailability(
   q: Queryable,
   params: { courseId: string; date: string; players: number; holes: Holes; now: Date; enforceBookingWindow: boolean; partnerId?: string | null;
     /** Horizon de réservation propre (ex. membre) ; par défaut celui du golf. */
-    horizonDays?: number },
+    horizonDays?: number;
+    /** Inclure les créneaux complets et bloqués (affichage de la grille complète). */
+    includeUnavailable?: boolean;
+    /** Catégorie tarifaire pour le calcul des remises (défaut : standard). */
+    customerCategory?: string },
 ): Promise<{ club: Club; course: Course; slots: AvailableSlot[] }> {
   const sheet = await getTeeSheet(q, params.courseId, params.date);
   const { club, course } = sheet;
@@ -304,7 +318,26 @@ export async function getAvailability(
     : [];
 
   const earliest = params.now.getTime() + (params.enforceBookingWindow ? club.minLeadMinutes * 60_000 : 0);
+  const publicLatest = params.now.getTime() + club.bookingHorizonDays * 86_400_000;
   const latest = params.now.getTime() + Math.max(club.bookingHorizonDays, params.horizonDays ?? 0) * 86_400_000;
+
+  // Green fee par créneau (catégorie du demandeur) : repère « heures creuses ».
+  const tariffs = await listTariffs(q, club.id);
+  const weekday = isoWeekday(params.date);
+  const feeAt = (localTime: string) => {
+    const [h, m] = localTime.split(':').map(Number);
+    const ctx = { product: 'green_fee' as const, courseId: course.id, holes: params.holes, customerCategory: params.customerCategory ?? 'standard',
+      date: params.date, isoWeekday: weekday, minuteOfDay: h! * 60 + m! };
+    return selectTariff(tariffs, ctx)?.amountMinor ?? null;
+  };
+  const fees = new Map(grid.map((r) => [r.startsAt, feeAt(r.localTime)]));
+  const reference = Math.max(0, ...[...fees.values()].filter((f): f is number => f !== null));
+  const discountOf = (startsAt: string) => {
+    const f = fees.get(startsAt);
+    if (f === null || f === undefined || reference <= 0) return null;
+    const pct = Math.round((1 - f / reference) * 100);
+    return pct >= 5 ? pct : null;
+  };
 
   const slots: AvailableSlot[] = [];
   for (const row of grid) {
@@ -312,27 +345,53 @@ export async function getAvailability(
     if (start.getTime() < earliest) continue;
     if (params.enforceBookingWindow && start.getTime() > latest) continue;
     if (!row.allowedHoles.includes(params.holes)) continue;
-    if (row.bookedPlayers > 0 && (row.isPrivate || row.holes !== params.holes)) continue;
     const mine = !!params.partnerId && row.held?.partnerId === params.partnerId;
     const remaining = mine ? row.held!.remaining : row.remaining;
-    if (remaining < params.players) continue;
-    if (row.blockedReason && !mine) continue;
+    const extra = {
+      discountPercent: discountOf(row.startsAt),
+      ...(params.enforceBookingWindow && start.getTime() > publicLatest ? { membersOnly: true } : {}),
+    };
+    const unavailable = (state: 'full' | 'blocked', reason: string | null = null) => {
+      if (params.includeUnavailable) {
+        slots.push({ startsAt: row.startsAt, localTime: row.localTime, remaining: Math.max(0, remaining), canBePrivate: false, state, reason, ...extra });
+      }
+    };
+    if (row.blockedReason && !mine) { unavailable('blocked', row.held ? 'Réservé' : row.blockedReason); continue; }
+    if (row.bookedPlayers > 0 && (row.isPrivate || row.holes !== params.holes)) { unavailable('full'); continue; }
+    if (remaining < params.players) { unavailable('full'); continue; }
     if (!row.caddie.reserved) {
       const ok = caddieData.every(({ rt, capacity, usages }) => {
         const p = usagePeriod(start, params.holes, course, rt.bufferMinutes);
         return available(capacity, usages, p.start.getTime(), p.end.getTime()) >= 1;
       });
-      if (!ok) continue;
+      if (!ok) { unavailable('full'); continue; }
     }
     slots.push({
       startsAt: row.startsAt,
       localTime: row.localTime,
       remaining,
       canBePrivate: row.bookedPlayers === 0,
+      state: 'available',
+      ...extra,
       ...(mine ? { heldForPartner: true } : {}),
     });
   }
   return { club, course, slots };
+}
+
+/** Résumé par jour pour le calendrier : créneaux réservables et présence de tarifs réduits. */
+export async function getCalendar(
+  q: Queryable,
+  params: { courseId: string; from: string; days: number; players: number; holes: Holes; now: Date; horizonDays?: number; customerCategory?: string },
+) {
+  const days: Array<{ date: string; available: number; deal: boolean }> = [];
+  const start = new Date(`${params.from}T12:00:00Z`);
+  for (let i = 0; i < Math.min(params.days, 62); i++) {
+    const date = new Date(start.getTime() + i * 86_400_000).toISOString().slice(0, 10);
+    const { slots } = await getAvailability(q, { ...params, date, enforceBookingWindow: true });
+    days.push({ date, available: slots.length, deal: slots.some((s) => (s.discountPercent ?? 0) > 0) });
+  }
+  return days;
 }
 
 /** Options (matériel) disponibles pour un créneau et une formule donnés. */

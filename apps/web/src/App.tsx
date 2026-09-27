@@ -12,6 +12,7 @@ import { ChangePassword, Team } from './pages/Team';
 import { Members } from './pages/Members';
 import { OpenGames } from './pages/OpenGames';
 import { Profile } from './pages/Profile';
+import { applyTheme, storedTheme, type ThemeChoice } from './theme';
 import { Reports } from './pages/Reports';
 import { Login } from './pages/Login';
 import { MyBookings } from './pages/MyBookings';
@@ -22,6 +23,18 @@ type Page = 'book' | 'sheet' | 'starter' | 'mine' | 'config' | 'assistant' | 're
 
 export function hasRole(user: User | null, roles: string[]): boolean {
   return !!user?.roles.some((r) => roles.includes(r.role));
+}
+
+function ThemeSwitch() {
+  const { t } = useI18n();
+  const [choice, setChoice] = useState<ThemeChoice>(storedTheme());
+  return (
+    <label className="theme-switch"><span className="sr-only">{t('theme.label')}</span>
+      <select value={choice} onChange={(e) => { const c = e.target.value as ThemeChoice; setChoice(c); applyTheme(c); }} aria-label={t('theme.label')}>
+        <option value="auto">◐ {t('theme.auto')}</option><option value="light">☀ {t('theme.light')}</option><option value="dark">☾ {t('theme.dark')}</option>
+      </select>
+    </label>
+  );
 }
 
 export function App() {
@@ -81,13 +94,14 @@ export function App() {
   return (
     <>
       <header className={`topbar${user?.customerId ? ' golfer-top' : ''}`}>
-        <span className="brand">⛳ Resa Golf</span>
+        <span className="brand"><span className="brand-mark" aria-hidden>⛳</span> Resa Golf</span>
         <nav className="nav">
           {tabs.filter(([, , show]) => show && !user?.mustChangePassword).map(([p, label]) => (
             <button key={p} className={page === p ? 'active' : ''} onClick={() => setPage(p)}>{label}</button>
           ))}
         </nav>
         <span className="spacer" />
+        <ThemeSwitch />
         <LocaleSwitcher />
         {user ? (
           <>
@@ -95,7 +109,7 @@ export function App() {
               {user.displayName}
               {user.roles.length > 0 && ` · ${[...new Set(user.roles.map((r) => ROLE_LABEL[r.role]))].join(', ')}`}
             </span>
-            <button className="btn sm" onClick={() => setPage('password')}>{t('nav.password')}</button>
+            <button className="btn sm hide-mobile" onClick={() => setPage('password')}>{t('nav.password')}</button>
             <button className="btn sm" onClick={logout}>{t('nav.logout')}</button>
           </>
         ) : (

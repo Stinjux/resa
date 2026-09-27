@@ -5,6 +5,7 @@ import { ErrorBox } from './common';
 import { errorText, useI18n } from '../i18n';
 import { PaymentBadge } from './PaymentSection';
 import { DocOverlay, InvoiceDoc, ReceiptDoc } from './Documents';
+import { ConfirmDialog, StatusBadge } from '../components/ui';
 
 function BookingCard({ b, round, onChanged }: { b: any; round?: any; onChanged: () => void }) {
   const { t } = useI18n();
@@ -21,8 +22,9 @@ function BookingCard({ b, round, onChanged }: { b: any; round?: any; onChanged: 
     if (upcoming) get(`/api/bookings/${b.id}/cancellation-preview`).then(setPreview).catch(() => undefined);
   }, [b.id, b.status]);
 
+  const [confirming, setConfirming] = useState(false);
   async function cancel() {
-    if (!confirm(t('mine.cancelConfirm'))) return;
+    setConfirming(false);
     try {
       await post(`/api/me/bookings/${b.id}/cancel`);
       onChanged();
@@ -35,19 +37,20 @@ function BookingCard({ b, round, onChanged }: { b: any; round?: any; onChanged: 
     <div className="card stack" style={{ gap: 6 }}>
       <div className="row" style={{ justifyContent: 'space-between' }}>
         <div>
-          <strong>{t('mine.at', { date: shortDate(b.teeTime.localDate), time: b.teeTime.localTime })}</strong> · {t('mine.summary', { players: b.players, holes: b.holes })}
+          <strong className={`num${b.status === 'cancelled' ? ' strike' : ''}`}>{t('mine.at', { date: shortDate(b.teeTime.localDate), time: b.teeTime.localTime })}</strong> · {t('mine.summary', { players: b.players, holes: b.holes })}
           {b.isPrivate && <span className="badge private"> {t('private')}</span>}
           <div className="small muted">{t('mine.ref', { ref: b.reference })} · {b.options.map((o: any) => `${o.name} × ${o.quantity}`).join(', ') || t('mine.noOption')}</div>
         </div>
         <div style={{ textAlign: 'end' }}>
-          {b.status === 'cancelled' ? <span className="badge warn">{t('mine.cancelled')}</span> : <strong>{money(order?.totalMinor ?? b.pricing.totalMinor, b.pricing.currency)}</strong>}
-          <div>{order && <PaymentBadge status={order.paymentStatus} />}</div>
+          <StatusBadge status={b.status === 'cancelled' ? 'cancelled' : !upcoming ? 'done' : order?.pendingMinor > 0 ? 'pending' : 'confirmed'} />
+          {b.status !== 'cancelled' && <div className="num" style={{ fontWeight: 700, marginTop: 4 }}>{money(order?.totalMinor ?? b.pricing.totalMinor, b.pricing.currency)}</div>}
+          <div>{order && b.status !== 'cancelled' && <PaymentBadge status={order.paymentStatus} />}</div>
         </div>
       </div>
       {upcoming && preview && (preview.customerCanCancel
         ? <div className="row small" style={{ alignItems: 'center' }}>
             <span className="muted">{t('mine.freeUntil', { date: new Date(preview.freeUntil).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }) })}</span>
-            <button className="btn sm danger" onClick={cancel}>{t('mine.cancel')}</button>
+            <button className="btn sm danger" onClick={() => setConfirming(true)}>{t('mine.cancel')}</button>
           </div>
         : <div className="small muted">{t('mine.contactGolf')}</div>)}
       {(order?.paidMinor > 0 || invoices.length > 0) && (
@@ -60,6 +63,12 @@ function BookingCard({ b, round, onChanged }: { b: any; round?: any; onChanged: 
               {t(i.kind === 'invoice' ? 'mine.invoice' : 'mine.creditNote')} {i.number}</button>
           ))}
         </div>
+      )}
+      {confirming && (
+        <ConfirmDialog title={t('mine.cancelConfirm')} danger confirmLabel={t('modal.confirmCancel')} cancelLabel={t('modal.keep')}
+          onConfirm={cancel} onClose={() => setConfirming(false)}>
+          <p className="muted" style={{ margin: 0 }}>{t('mine.at', { date: shortDate(b.teeTime.localDate), time: b.teeTime.localTime })} · {t('mine.ref', { ref: b.reference })}</p>
+        </ConfirmDialog>
       )}
       {round && <Companions round={round} />}
       {upcoming && round && !b.isPrivate && <OpenToggle b={b} onChanged={onChanged} onError={(e) => setError(errorText(t, e))} />}
@@ -105,9 +114,9 @@ function PastRound({ r }: { r: any }) {
   return (
     <div className="card stack" style={{ gap: 4 }}>
       <div className="row" style={{ justifyContent: 'space-between' }}>
-        <strong>{t('mine.at', { date: shortDate(r.date), time: r.localTime })}</strong>
-        {r.status === 'cancelled' ? <span className="badge warn">{t('mine.cancelled')}</span>
-          : r.checkinStatus === 'no_show' ? <span className="badge warn">{t('mine.noShow')}</span> : null}
+        <strong className={`num${r.status === 'cancelled' ? ' strike' : ''}`}>{t('mine.at', { date: shortDate(r.date), time: r.localTime })}</strong>
+        {r.checkinStatus === 'no_show' && r.status !== 'cancelled' ? <span className="badge warn">⚠ {t('mine.noShow')}</span>
+          : <StatusBadge status={r.status === 'cancelled' ? 'cancelled' : 'done'} />}
       </div>
       <div className="small muted">{r.clubName} · {r.courseName} · {t('mine.summary', { players: r.players, holes: r.holes })}</div>
       {r.status === 'confirmed' && <Companions round={r} />}

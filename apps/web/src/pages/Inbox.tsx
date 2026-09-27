@@ -145,7 +145,7 @@ export function Inbox({ user, onChanged }: { user: User; onChanged: () => void }
         <div className="card stack" style={{ gap: 4, padding: 8 }}>
           {inbox?.threads.length === 0 && <p className="muted small" style={{ margin: 8 }}>Aucun message.</p>}
           {inbox?.threads.map((t: any) => (
-            <button key={t.id} className="btn" style={{ textAlign: 'start', fontWeight: 400, background: t.id === threadId ? 'var(--accent-soft)' : undefined }}
+            <button key={t.id} className="btn" style={{ textAlign: 'start', fontWeight: 400, background: t.id === threadId ? 'var(--color-primary-subtle)' : undefined }}
               onClick={() => setThreadId(t.id)}>
               <div className="row" style={{ justifyContent: 'space-between', gap: 6 }}>
                 <strong>{t.contactName ?? t.contact}</strong>
@@ -174,7 +174,7 @@ export function Inbox({ user, onChanged }: { user: User; onChanged: () => void }
               {thread.requests.map((r: any) => <RequestCard key={r.id} r={r} onDone={refresh} />)}
               <form className="composer" onSubmit={(e) => { e.preventDefault(); sendReply(); }}>
                 <textarea rows={2} value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Répondre au client…" aria-label="Réponse" />
-                <button className="btn primary" disabled={!reply.trim()}>Envoyer</button>
+                <button className="btn" disabled={!reply.trim()}>Envoyer</button>
               </form>
             </>
           )}

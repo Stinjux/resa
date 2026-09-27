@@ -43,7 +43,7 @@ export function Members({ user }: { user: User }) {
         <h2 style={{ margin: 0 }}>Membres</h2>
         {clubs.length > 1 && <select value={clubId ?? ''} onChange={(e) => setClubId(e.target.value)}>{clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>}
         <input placeholder="Rechercher (nom, carte, téléphone…)" value={q} onChange={(e) => setQ(e.target.value)} style={{ flex: 1, minWidth: 180 }} />
-        <button className="btn sm primary" disabled={!plans.length} title={plans.length ? '' : 'Créer d’abord une formule (Configuration → Membres)'}
+        <button className="btn sm" disabled={!plans.length} title={plans.length ? '' : 'Créer d’abord une formule (Configuration → Membres)'}
           onClick={() => setForm({ planId: plans[0]?.id, validFrom: today, validTo: addDays(today, 364), firstName: '', lastName: '' })}>+ Nouveau membre</button>
       </div>
       {!plans.length && <div className="alert">Aucune formule d'abonnement : la direction la crée dans Configuration → Membres (tarif membre, réservation anticipée).</div>}

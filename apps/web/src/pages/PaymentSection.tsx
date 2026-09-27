@@ -5,12 +5,12 @@ import { ErrorBox } from './common';
 import { useI18n } from '../i18n';
 import { DocOverlay, InvoiceDoc, ReceiptDoc } from './Documents';
 
-export const PAYMENT_STATUS: Record<string, [string, string]> = {
-  nothing_due: ['Rien à payer', 'badge'],
-  unpaid: ['À payer', 'badge warn'],
-  partially_paid: ['Partiellement payé', 'badge warn'],
-  paid: ['Payé', 'badge ok'],
-  refund_due: ['À rembourser', 'badge private'],
+export const PAYMENT_STATUS: Record<string, [string, string, string]> = {
+  nothing_due: ['Rien à payer', 'badge', '–'],
+  unpaid: ['À payer', 'badge warn', '⏱'],
+  partially_paid: ['Partiellement payé', 'badge warn', '◐'],
+  paid: ['Payé', 'badge success', '✓'],
+  refund_due: ['À rembourser', 'badge info', '↺'],
 };
 
 const METHODS: Array<[string, string]> = [['cash', 'Espèces'], ['card_terminal', 'Carte (TPE)'], ['bank_transfer', 'Virement'], ['other', 'Autre']];
@@ -19,8 +19,8 @@ const METHOD_LABEL: Record<string, string> = { ...Object.fromEntries(METHODS), o
 export function PaymentBadge({ status }: { status: string | null | undefined }) {
   const { t } = useI18n();
   if (!status) return null;
-  const [, cls] = PAYMENT_STATUS[status] ?? [status, 'badge'];
-  return <span className={cls}>{t(`pay.${status}` as never)}</span>;
+  const [, cls, icon] = PAYMENT_STATUS[status] ?? [status, 'badge', ''];
+  return <span className={cls}><span aria-hidden>{icon}</span>{t(`pay.${status}` as never)}</span>;
 }
 
 /** Solde, paiements et remboursements d'une réservation ; encaisser / rembourser. */
@@ -109,7 +109,7 @@ export function PaymentSection({ bookingId, canManage, canFinance = false, onCha
         </div>
       )}
       {mode && (
-        <div className="card stack" style={{ background: 'var(--surface-2)' }}>
+        <div className="card stack" style={{ background: 'var(--color-surface-muted)' }}>
           <div className="grid2">
             <label>Montant ({cur})<input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" /></label>
             <label>Moyen<select value={method} onChange={(e) => setMethod(e.target.value)}>
@@ -191,7 +191,7 @@ function BillingDocs({ bookingId, canManage, canFinance, split }: {
         </div>
       ))}
       {form && (
-        <div className="card stack" style={{ background: 'var(--surface-2)' }}>
+        <div className="card stack" style={{ background: 'var(--color-surface-muted)' }}>
           <label>Nom ou raison sociale<input value={form.name} placeholder="Par défaut : nom du client" onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
           <label>Adresse<input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} /></label>
           <label>ICE du client (entreprise)<input value={form.ice} onChange={(e) => setForm({ ...form, ice: e.target.value })} /></label>
@@ -239,7 +239,7 @@ export function CancelControl({ bookingId, onCancelled }: { bookingId: string; o
   }
   if (!open) return <button className="btn danger" onClick={show}>Annuler la réservation</button>;
   return (
-    <div className="card stack" style={{ borderColor: 'var(--danger)' }}>
+    <div className="card stack" style={{ borderColor: 'var(--color-danger)' }}>
       <h3 style={{ margin: 0 }}>Annuler la réservation</h3>
       {preview && (preview.feeMinor > 0
         ? <p className="small" style={{ margin: 0 }}>Annulation tardive : frais de <strong>{money(preview.feeMinor, preview.currency)}</strong> (gratuit jusqu'au {new Date(preview.freeUntil).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}).</p>

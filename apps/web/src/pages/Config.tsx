@@ -150,10 +150,10 @@ function Editable({ title, items, render, fields, entity, save, newValues, colum
     <div className="card stack">
       <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
         <h2 style={{ margin: 0 }}>{title}</h2>
-        <button className="btn sm primary" onClick={() => setEditing('new')}>+ Ajouter</button>
+        <button className="btn sm" onClick={() => setEditing('new')}>+ Ajouter</button>
       </div>
       {editing === 'new' && (
-        <div className="card" style={{ background: 'var(--surface-2)' }}>
+        <div className="card" style={{ background: 'var(--color-surface-muted)' }}>
           <EntityForm fields={fields} isNew initial={newValues}
             onSubmit={async (v) => { await save(entity, null)(v); setEditing(null); }} onCancel={() => setEditing(null)} />
         </div>
@@ -163,7 +163,7 @@ function Editable({ title, items, render, fields, entity, save, newValues, colum
           <thead><tr>{columns.map((c) => <th key={c}>{c}</th>)}<th /></tr></thead>
           <tbody>
             {items.map((item) => editing === item.id ? (
-              <tr key={item.id}><td colSpan={columns.length + 1} style={{ background: 'var(--surface-2)' }}>
+              <tr key={item.id}><td colSpan={columns.length + 1} style={{ background: 'var(--color-surface-muted)' }}>
                 <EntityForm fields={fields} isNew={false} initial={item}
                   onSubmit={async (v) => { await save(entity, item.id)(v); setEditing(null); }} onCancel={() => setEditing(null)} />
               </td></tr>
@@ -464,7 +464,7 @@ function Emails({ clubId, enabled }: { clubId: string; enabled: boolean }) {
                 <td>{m.reference}</td>
                 <td className="small">{m.to}</td>
                 <td><span className={EMAIL_STATUS[m.status]?.[1]}>{EMAIL_STATUS[m.status]?.[0] ?? m.status}</span>
-                  {m.lastError && <div className="small" style={{ color: 'var(--danger)' }}>{m.lastError}</div>}</td>
+                  {m.lastError && <div className="small" style={{ color: 'var(--color-danger)' }}>{m.lastError}</div>}</td>
                 <td className="row">
                   <button className="btn sm" onClick={() => get(`/api/emails/${m.id}`).then((r) => setPreview(r.email)).catch((e) => setError(e.message))}>Voir</button>
                   {m.status !== 'pending' && <button className="btn sm" onClick={() => resend(m.id)}>Renvoyer</button>}
@@ -479,7 +479,7 @@ function Emails({ clubId, enabled }: { clubId: string; enabled: boolean }) {
         <div className="card stack">
           <div className="row"><strong>{preview.subject}</strong><span className="small muted">→ {preview.to}</span><span className="spacer" />
             <button className="btn sm" onClick={() => setPreview(null)}>Fermer</button></div>
-          <iframe title="Aperçu" sandbox="" srcDoc={preview.html} style={{ width: '100%', height: 520, border: '1px solid var(--border)', borderRadius: 8, background: '#fff' }} />
+          <iframe title="Aperçu" sandbox="" srcDoc={preview.html} style={{ width: '100%', height: 520, border: '1px solid var(--color-border)', borderRadius: 8, background: 'var(--paper-bg)' }} />
         </div>
       )}
     </div>
@@ -540,7 +540,7 @@ function PosSync({ clubId, posProvider }: { clubId: string; posProvider: string 
                 <td>{j.reference}</td>
                 <td><span className={JOB_STATUS[j.status]?.[1]}>{JOB_STATUS[j.status]?.[0] ?? j.status}</span></td>
                 <td>{j.attempts}/{j.maxAttempts}</td>
-                <td className="small">{j.lastError ? <span style={{ color: 'var(--danger)' }}>{j.lastError}</span> : j.externalId ?? ''}</td>
+                <td className="small">{j.lastError ? <span style={{ color: 'var(--color-danger)' }}>{j.lastError}</span> : j.externalId ?? ''}</td>
                 <td>{['failed', 'dead'].includes(j.status) && (
                   <button className="btn sm" onClick={() => act(() => post(`/api/clubs/${clubId}/pos/jobs/${j.id}/retry`), () => 'Relancé.')}>Relancer</button>
                 )}</td>

@@ -228,7 +228,7 @@ function PartnerInvoicing({ clubId, timezone, onIssued }: { clubId: string; time
       <div className="row">
         <strong>{chosen.length} réservation(s) · {money(total)}</strong>
         <span className="spacer" />
-        <button className="btn primary" disabled={busy || !chosen.length} onClick={issue}>Émettre la facture partenaire</button>
+        <button className="btn" disabled={busy || !chosen.length} onClick={issue}>Émettre la facture partenaire</button>
       </div>
       {doc && <DocOverlay onClose={() => setDoc(null)}><InvoiceDoc invoice={doc} /></DocOverlay>}
     </div>
@@ -292,7 +292,7 @@ function InvoiceJournal({ clubId, timezone, payer }: { clubId: string; timezone:
         </tbody>
       </table></div>
       {paying && (
-        <div className="card stack" style={{ background: 'var(--surface-2)' }}>
+        <div className="card stack" style={{ background: 'var(--color-surface-muted)' }}>
           <strong>Règlement de la facture {paying.invoice.number} · reste {money(paying.invoice.totalMinor - paying.invoice.settledMinor, paying.invoice.currency)}</strong>
           <div className="grid2">
             <label>Montant<input value={paying.amount} inputMode="decimal" onChange={(e) => setPaying({ ...paying, amount: e.target.value })} /></label>

@@ -35,7 +35,7 @@ export function Team({ user }: { user: User }) {
         <div className="row">
           <h2 style={{ margin: 0 }}>Équipe</h2>
           <span className="spacer" />
-          <button className="btn sm primary" onClick={() => { setEditing({ isNew: true, email: '', displayName: '', roles: [{ clubId: clubs[0]?.id ?? null, role: 'receptionist' }] }); setSecret(null); }}>
+          <button className="btn sm" onClick={() => { setEditing({ isNew: true, email: '', displayName: '', roles: [{ clubId: clubs[0]?.id ?? null, role: 'receptionist' }] }); setSecret(null); }}>
             + Nouveau compte</button>
         </div>
         <p className="small muted" style={{ margin: 0 }}>
@@ -115,7 +115,7 @@ function UserForm({ value, clubs, isOrgAdmin, onSave, onCancel }: {
     try { await onSave(v); } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }
   return (
-    <div className="card stack" style={{ background: 'var(--surface-2)' }}>
+    <div className="card stack" style={{ background: 'var(--color-surface-muted)' }}>
       <div className="grid2">
         <label>Nom affiché<input value={v.displayName} onChange={(e) => setV({ ...v, displayName: e.target.value })} /></label>
         <label>E-mail de connexion<input value={v.email} disabled={!v.isNew} onChange={(e) => setV({ ...v, email: e.target.value })} /></label>

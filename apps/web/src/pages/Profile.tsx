@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { get, patch } from '../api';
 import { errorText, useI18n } from '../i18n';
 import { ErrorBox } from './common';
+import { ChangePassword } from './Team';
 
 export function Profile() {
   const { t } = useI18n();
@@ -57,6 +58,7 @@ export function Profile() {
           </div>
         ))}
       </div>
+      <ChangePassword required={false} onDone={() => undefined} />
     </div>
   );
 }

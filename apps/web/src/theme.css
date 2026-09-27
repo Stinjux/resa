@@ -1,0 +1,150 @@
+/*
+ * Thème Resa Golf : tokens de design. SEULE source des couleurs, polices,
+ * rayons et ombres de l'interface : les composants n'utilisent que ces
+ * variables (aucun hex ni nom de police en dur ailleurs).
+ *
+ * Répartition visée : ~80 % neutres chauds, ~15 % vert primaire, ~5 % accent
+ * laiton (réservé au premium / membres). Contrastes : voir docs/THEME.md.
+ *
+ * Mode : clair par défaut ; sombre via [data-theme="dark"] ou, sans choix
+ * explicite, selon le système (prefers-color-scheme).
+ */
+
+:root,
+[data-theme="light"] {
+  /* Neutres */
+  --color-bg: #F7F6F2;
+  --color-surface: #FFFFFF;
+  --color-surface-muted: #EFEDE6;
+  --color-border: #DDD9CE;
+  --color-border-strong: #B9B4A6;
+  /* Bordure des champs et contrôles interactifs (≥ 3:1 sur la surface, WCAG 1.4.11). */
+  --color-border-control: #8C8778;
+  --color-text: #1A1D1B;
+  --color-text-muted: #5C625E;
+  --color-text-disabled: #9A9E99;
+
+  /* Primaire : vert parcours */
+  --color-primary: #1F5A43;
+  --color-primary-hover: #174634;
+  --color-primary-active: #11372A;
+  --color-primary-subtle: #E4EFE9;
+  --color-on-primary: #FFFFFF;
+
+  /* Accent : laiton, réservé au premium / membres (bordures, icônes ; texte : --color-accent-text) */
+  --color-accent: #A8823A;
+  --color-accent-text: #7A5C22;
+  --color-accent-subtle: #F5EDDC;
+  --color-on-accent: #1A1D1B;
+
+  /* Sémantiques */
+  --color-success: #2A774B;  --color-success-subtle: #E6F2EA; /* spec #2E7D4F : 4.39:1 sur son fond, assombri pour 4.5:1 */
+  --color-warning: #8A5200;  --color-warning-subtle: #FDF3E1;
+  --color-danger: #B3261E;   --color-danger-subtle: #FBE9E7;
+  --color-info: #2F5D8A;     --color-info-subtle: #E7EEF6;
+
+  /* Effets */
+  --focus-ring: 0 0 0 3px rgba(31, 90, 67, 0.35);
+  --shadow-float: 0 8px 24px rgba(26, 29, 27, 0.12);
+  --shadow-sticky: 0 -6px 18px rgba(26, 29, 27, 0.08);
+  --color-scrim: rgba(26, 29, 27, 0.5);
+
+  /* Formes */
+  --radius: 8px;
+  --radius-card: 12px;
+  --radius-pill: 999px;
+  --control-height: 44px;
+
+  /* Typographie */
+  --font-display: "Newsreader", Georgia, serif;
+  --font-ui: "Segoe UI", -apple-system, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --text-h1: 44px;
+  --text-h2: 22px;
+  --text-h3: 18px;
+  --text-body: 15px;
+  --text-small: 13px;
+  --text-caption: 12px;
+
+  /* Documents imprimables (facture, reçu, clôture) : toujours noir sur blanc. */
+  --paper-bg: #FFFFFF;
+  --paper-text: #111111;
+  --paper-muted: #444444;
+  --paper-rule: #DDDDDD;
+  --paper-border: #BBBBBB;
+  --paper-head: #F2F2F2;
+
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --color-bg: #121614;
+  --color-surface: #1A1F1C;
+  --color-surface-muted: #232925;
+  --color-border: #2F3632;
+  --color-border-strong: #47504A;
+  --color-border-control: #6E7870;
+  --color-text: #ECEDE9;
+  --color-text-muted: #A3A9A4;
+  --color-text-disabled: #6E756F;
+
+  --color-primary: #5FB38A;
+  --color-primary-hover: #74C39C;
+  --color-primary-active: #8ACFAB;
+  --color-primary-subtle: #1D3329;
+  --color-on-primary: #0E1A14;
+
+  --color-accent: #D2AE66;
+  --color-accent-text: #D2AE66;
+  --color-accent-subtle: #33291A;
+  --color-on-accent: #1A1D1B;
+
+  --color-success: #6CC592;  --color-success-subtle: #17301F;
+  --color-warning: #E3A94F;  --color-warning-subtle: #33260F;
+  --color-danger: #F2958C;   --color-danger-subtle: #3A1C19;
+  --color-info: #8DB6E3;     --color-info-subtle: #182838;
+
+  --focus-ring: 0 0 0 3px rgba(95, 179, 138, 0.45);
+  --shadow-float: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-sticky: 0 -6px 18px rgba(0, 0, 0, 0.35);
+  --color-scrim: rgba(0, 0, 0, 0.6);
+
+  color-scheme: dark;
+}
+
+/* Sans choix explicite : on suit le système. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-bg: #121614;
+    --color-surface: #1A1F1C;
+    --color-surface-muted: #232925;
+    --color-border: #2F3632;
+    --color-border-strong: #47504A;
+    --color-border-control: #6E7870;
+    --color-text: #ECEDE9;
+    --color-text-muted: #A3A9A4;
+    --color-text-disabled: #6E756F;
+    --color-primary: #5FB38A;
+    --color-primary-hover: #74C39C;
+    --color-primary-active: #8ACFAB;
+    --color-primary-subtle: #1D3329;
+    --color-on-primary: #0E1A14;
+    --color-accent: #D2AE66;
+    --color-accent-text: #D2AE66;
+    --color-accent-subtle: #33291A;
+    --color-on-accent: #1A1D1B;
+    --color-success: #6CC592;  --color-success-subtle: #17301F;
+    --color-warning: #E3A94F;  --color-warning-subtle: #33260F;
+    --color-danger: #F2958C;   --color-danger-subtle: #3A1C19;
+    --color-info: #8DB6E3;     --color-info-subtle: #182838;
+    --focus-ring: 0 0 0 3px rgba(95, 179, 138, 0.45);
+    --shadow-float: 0 8px 24px rgba(0, 0, 0, 0.45);
+    --shadow-sticky: 0 -6px 18px rgba(0, 0, 0, 0.35);
+    --color-scrim: rgba(0, 0, 0, 0.6);
+    color-scheme: dark;
+  }
+}
+
+@media (max-width: 700px) {
+  :root { --text-h1: 32px; --control-height: 48px; }
+}

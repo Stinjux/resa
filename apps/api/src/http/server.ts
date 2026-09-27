@@ -54,7 +54,9 @@ export function buildServer(input: Omit<AppDeps, 'posRegistry' | 'ai' | 'messagi
   app.register(fastifyHelmet, {
     contentSecurityPolicy: {
       directives: {
-        defaultSrc: ["'self'"], scriptSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'"],
+        defaultSrc: ["'self'"], scriptSrc: ["'self'"],
+        // Polices du thème (Newsreader, IBM Plex Mono) servies par Google Fonts.
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'], fontSrc: ["'self'", 'https://fonts.gstatic.com'],
         imgSrc: ["'self'", 'data:'], connectSrc: ["'self'"], frameAncestors: ["'none'"], formAction: ["'self'"],
         // Forcer le HTTPS seulement derrière le proxy HTTPS de production (sinon http://localhost casserait).
         upgradeInsecureRequests: opts.trustProxy ? [] : null,

@@ -67,7 +67,7 @@ export function OpenGames({ user }: { user: User }) {
                 {Array.from({ length: g.remaining }, (_, i) => <li key={`free-${i}`} className="free"><span className="avatar">+</span><span className="muted">—</span></li>)}
               </ul>
               {g.joined ? <span className="badge ok">{t('og.joined')}</span> : (
-                <button className="btn primary block" onClick={() => { setJoining({ game: g, players: 1, keepOpen: true }); setMessage(null); }}>{t('og.join')}</button>
+                <button className="btn block" onClick={() => { setJoining({ game: g, players: 1, keepOpen: true }); setMessage(null); }}>{t('og.join')}</button>
               )}
               {joining?.game.teeTimeId === g.teeTimeId && <JoinForm joining={joining} setJoining={setJoining}
                 onDone={(ref) => { setJoining(null); setMessage(t('og.done', { ref })); load(); }} />}

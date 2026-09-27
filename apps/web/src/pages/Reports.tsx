@@ -40,7 +40,7 @@ function Figures({ d }: { d: any }) {
     <div className="card stack">
       <h2 style={{ margin: 0 }}>Chiffres de la période</h2>
       <table className="lines figures"><tbody>
-        {rows.map(([k, v], i) => <tr key={i}><td style={k.startsWith('  ') ? { paddingInlineStart: 16, color: 'var(--muted)' } : undefined}>{k.trim()}</td><td>{v}</td></tr>)}
+        {rows.map(([k, v], i) => <tr key={i}><td style={k.startsWith('  ') ? { paddingInlineStart: 16, color: 'var(--color-text-muted)' } : undefined}>{k.trim()}</td><td>{v}</td></tr>)}
         {busiest && <tr><td>Jour le plus rempli</td><td>{WEEKDAYS[busiest.weekday]} ({pct(busiest.players / busiest.capacity)})</td></tr>}
         {peakHour && <tr><td>Heure la plus demandée</td><td>{peakHour.hour} h ({peakHour.players} joueurs)</td></tr>}
       </tbody></table>
