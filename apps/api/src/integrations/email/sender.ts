@@ -12,6 +12,7 @@ export interface EmailMessage {
   subject: string;
   text: string;
   html: string;
+  attachments?: Array<{ filename: string; content: string; contentType: string }>;
 }
 
 export interface EmailSender {
@@ -31,7 +32,8 @@ export function smtpSender(url: string): EmailSender {
   return {
     mode: 'smtp',
     async send(m) {
-      const info = await transport.sendMail({ from: m.from, replyTo: m.replyTo ?? undefined, to: m.to, subject: m.subject, text: m.text, html: m.html });
+      const info = await transport.sendMail({ from: m.from, replyTo: m.replyTo ?? undefined, to: m.to, subject: m.subject, text: m.text, html: m.html,
+        attachments: m.attachments });
       return { id: info.messageId ?? null };
     },
   };

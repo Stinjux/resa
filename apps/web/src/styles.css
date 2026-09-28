@@ -371,3 +371,52 @@ table.sheet { width: 100%; border-collapse: collapse; }
   body.printing-doc .doc-toolbar { display: none; }
   body.printing-doc .doc-paper { padding: 0; max-width: none; box-shadow: none; }
 }
+
+/* ---------------------------------------------------------------- Menu modulable */
+.nav-more { position: relative; }
+.nav-more .menu {
+  position: absolute; top: calc(100% + 4px); inset-inline-start: 0; z-index: 30; min-width: 220px;
+  display: flex; flex-direction: column; padding: 6px; background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: var(--radius-card); box-shadow: var(--shadow-float);
+}
+.nav-more .menu button { text-align: start; border-radius: var(--radius); box-shadow: none; }
+.nav-more .menu button.active { background: var(--color-primary-subtle); color: var(--color-text); }
+.nav-more .menu hr { border: 0; border-top: 1px solid var(--color-border); margin: 6px 0; width: 100%; }
+ul.orderable { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 50vh; overflow: auto; }
+ul.orderable li { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border: 1px solid var(--color-border); border-radius: var(--radius); background: var(--color-surface); }
+
+/* ---------------------------------------------------------------- Rapports modulables */
+.dash { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 16px; align-items: start; }
+.dash .dash-kpis, .dash .dash-daily, .dash .dash-clubs { grid-column: 1 / -1; }
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 700px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .dash { grid-template-columns: 1fr; } }
+.kpi { border: 1px solid var(--color-border); border-radius: var(--radius); padding: 10px 12px; background: var(--color-surface); }
+.kpi-label { font-size: var(--text-caption); color: var(--color-text-muted); font-weight: 600; }
+.kpi-value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.25; overflow-wrap: anywhere; }
+.delta { font-size: var(--text-caption); font-weight: 600; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
+.delta.good { color: var(--color-success); }
+.delta.bad { color: var(--color-danger); }
+.dtable th { text-align: start; font-size: var(--text-caption); color: var(--color-text-muted); font-weight: 600; padding: 4px 0; }
+.dtable th:not(:first-child) { text-align: end; }
+.dtable th + th, .dtable td + td { padding-inline-start: 14px; }
+.dtable td:not(:first-child) { text-align: end; }
+.dtable td[colspan], .figures td[colspan] { text-align: start; }
+.dval { display: inline-flex; align-items: center; gap: 8px; justify-content: flex-end; width: 100%; }
+.dval > span:last-child { min-width: 3ch; }
+.dbar { display: inline-block; width: 90px; max-width: 40vw; height: 8px; background: var(--color-surface-muted); border-radius: 4px; overflow: hidden; }
+.dbar span { display: block; height: 100%; background: var(--color-primary); border-radius: 0 4px 4px 0; }
+.chipset { border: 0; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.chipset legend { font-size: var(--text-small); color: var(--color-text-muted); font-weight: 500; padding: 0; margin-bottom: 4px; width: 100%; }
+.chip-toggle { flex-direction: row; align-items: center; gap: 0; cursor: pointer; font-size: var(--text-small); font-weight: 500; color: var(--color-text);
+  padding: 4px 12px; min-height: 34px; border-radius: var(--radius-pill); border: 1.5px solid var(--color-border-control); background: var(--color-surface); }
+.chip-toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.chip-toggle.on { background: var(--color-primary-subtle); border-color: var(--color-primary); color: var(--color-text); }
+.chip-toggle:focus-within { box-shadow: var(--focus-ring); }
+.print-only { display: none; }
+@media print {
+  .print-only { display: block; }
+  .reports .dash { display: block; }
+  .reports .dash > section { break-inside: avoid; margin-bottom: 12px; border: 1px solid var(--paper-border) !important; padding: 10px !important; }
+  .dbar { background: var(--paper-head); }
+  .dbar span { background: var(--paper-text); }
+}

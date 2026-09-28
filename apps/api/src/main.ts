@@ -11,6 +11,7 @@ import { processMessagingQueue } from './modules/messaging/service.js';
 import { emailSenderFromEnv } from './integrations/email/sender.js';
 import { processEmailQueue, scheduleReminders } from './modules/notifications/service.js';
 import { releaseDueAllotments } from './modules/partners/service.js';
+import { processDueSchedules } from './modules/analytics/schedules.js';
 import { processPosJobs } from './modules/pos-sync/service.js';
 
 const config = loadConfig();
@@ -64,6 +65,13 @@ const app = buildServer({ db, now: () => new Date(), posRegistry, ai, messaging,
     }
   }, Number(process.env.MESSAGING_WORKER_INTERVAL_MS ?? 5_000)).unref();
 }
+
+// Rapports programmés (hebdomadaires / mensuels) : vérification toutes les 5 minutes.
+setInterval(() => {
+  processDueSchedules(db, emailSender, new Date())
+    .then((n) => n && app.log.info({ sent: n }, 'Rapports programmés envoyés'))
+    .catch((err) => app.log.error(err, 'Rapports programmés'));
+}, 300_000).unref();
 
 // Allotements : places non utilisées rendues à la vente à la date de release.
 setInterval(() => {

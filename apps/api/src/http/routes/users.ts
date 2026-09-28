@@ -36,6 +36,24 @@ export function userRoutes(app: FastifyInstance, deps: AppDeps) {
     return resetStaffPassword(deps.db, principal(req), id, actorOf(req));
   });
 
+  // --- Préférences d'interface (barre de menu, blocs de rapport) : suivent le compte sur tous les appareils.
+  const prefs = z.object({
+    navPinned: z.array(z.string().max(30)).max(30),
+    reportBlocks: z.array(z.string().max(30)).max(30),
+  }).partial().strict();
+
+  app.get('/api/me/preferences', async (req) => {
+    const { rows } = await deps.db.query('SELECT preferences FROM users WHERE id = $1', [principal(req).userId]);
+    return { preferences: rows[0]?.preferences ?? {} };
+  });
+
+  app.put('/api/me/preferences', async (req) => {
+    const patch = prefs.parse(req.body);
+    const { rows } = await deps.db.query(
+      'UPDATE users SET preferences = preferences || $2::jsonb WHERE id = $1 RETURNING preferences', [principal(req).userId, JSON.stringify(patch)]);
+    return { preferences: rows[0].preferences };
+  });
+
   // --- Son propre mot de passe (tout compte)
   app.post('/api/me/password', { config: { rateLimit: { max: app.loginRateLimit, timeWindow: '1 minute' } } }, async (req) => {
     const body = z.object({ current: z.string().min(1).max(200), next: z.string().min(MIN_PASSWORD).max(200) }).parse(req.body);

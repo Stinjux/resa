@@ -13,6 +13,7 @@ import { Members } from './pages/Members';
 import { OpenGames } from './pages/OpenGames';
 import { Profile } from './pages/Profile';
 import { applyTheme, storedTheme, type ThemeChoice } from './theme';
+import { NavBar } from './components/NavBar';
 import { Reports } from './pages/Reports';
 import { Login } from './pages/Login';
 import { MyBookings } from './pages/MyBookings';
@@ -24,6 +25,8 @@ type Page = 'book' | 'sheet' | 'starter' | 'mine' | 'config' | 'assistant' | 're
 export function hasRole(user: User | null, roles: string[]): boolean {
   return !!user?.roles.some((r) => roles.includes(r.role));
 }
+
+type Preferences = { navPinned?: string[]; reportBlocks?: string[] };
 
 function ThemeSwitch() {
   const { t } = useI18n();
@@ -40,6 +43,7 @@ function ThemeSwitch() {
 export function App() {
   const [user, setUser] = useState<User | null>(null);
   const [page, setPage] = useState<Page>('book');
+  const [prefs, setPrefs] = useState<Preferences>({});
   const [ready, setReady] = useState(false);
   const { t } = useI18n();
   const [pending, setPending] = useState(0);
@@ -57,6 +61,7 @@ export function App() {
 
   function onLogin(u: User) {
     setUser(u);
+    get<{ preferences: Preferences }>('/api/me/preferences').then((r) => setPrefs(r.preferences)).catch(() => setPrefs({}));
     if (hasRole(u, ['org_admin', 'club_admin', 'receptionist'])) setPage('sheet');
     else if (hasRole(u, ['starter'])) setPage('starter');
     else if (u.partnerId) setPage('partner');
@@ -68,6 +73,7 @@ export function App() {
     await post('/api/auth/logout').catch(() => undefined);
     setToken(null);
     setUser(null);
+    setPrefs({});
     setPage('book');
   }
 
@@ -95,11 +101,11 @@ export function App() {
     <>
       <header className={`topbar${user?.customerId ? ' golfer-top' : ''}`}>
         <span className="brand"><span className="brand-mark" aria-hidden>⛳</span> Resa Golf</span>
-        <nav className="nav">
-          {tabs.filter(([, , show]) => show && !user?.mustChangePassword).map(([p, label]) => (
-            <button key={p} className={page === p ? 'active' : ''} onClick={() => setPage(p)}>{label}</button>
-          ))}
-        </nav>
+        {!user?.mustChangePassword && (
+          <NavBar items={tabs.filter(([, , show]) => show).map(([id, label]) => ({ id, label }))} active={page}
+            saved={prefs.navPinned} canSave={!!user} onSelect={(id) => setPage(id as Page)}
+            onSaved={(navPinned) => setPrefs({ ...prefs, navPinned })} />
+        )}
         <span className="spacer" />
         <ThemeSwitch />
         <LocaleSwitcher />

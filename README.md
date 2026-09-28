@@ -97,6 +97,8 @@ Servie par le serveur de l'API une fois compilée (`npm start`) :
   portail de réservation pour le partenaire, relevé de compte (voir `docs/PARTENAIRES.md`)
 - **E-mails aux clients** : confirmation, modification, annulation et rappel, dans la langue du client ;
   consultables dans Configuration → E-mails (voir `docs/EMAILS.md`)
+- **Rapports modulables** : indicateurs au choix, plusieurs golfs, filtres, comparaison, Excel/PDF, envoi
+  automatique chaque semaine ou chaque mois ; **barre de menu personnalisable** (voir `docs/RAPPORTS.md`)
 - **Design system** : thème clair / sombre (tokens dans `apps/web/src/theme.css`), page interne `/styleguide`,
   contrastes WCAG AA vérifiés par `node scripts/contrast.mjs` (voir `docs/THEME.md`)
 - Interface client en **français, anglais et arabe** (sélecteur de langue en haut à droite)

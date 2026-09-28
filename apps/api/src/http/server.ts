@@ -20,6 +20,7 @@ import { emailRoutes } from './routes/emails.js';
 import { partnerRoutes } from './routes/partners.js';
 import { userRoutes } from './routes/users.js';
 import { memberRoutes } from './routes/members.js';
+import { analyticsRoutes } from './routes/analytics.js';
 import { orderRoutes } from './routes/orders.js';
 import { staffRoutes } from './routes/staff.js';
 import { bookingRoutes } from './routes/bookings.js';
@@ -89,6 +90,7 @@ export function buildServer(input: Omit<AppDeps, 'posRegistry' | 'ai' | 'messagi
     partnerRoutes(api, deps);
     userRoutes(api, deps);
     memberRoutes(api, deps);
+    analyticsRoutes(api, deps);
   });
 
   if (opts.webRoot && existsSync(opts.webRoot)) {
