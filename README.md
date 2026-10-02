@@ -99,6 +99,9 @@ Servie par le serveur de l'API une fois compilée (`npm start`) :
   consultables dans Configuration → E-mails (voir `docs/EMAILS.md`)
 - **Rapports modulables** : indicateurs au choix, plusieurs golfs, filtres, comparaison, Excel/PDF, envoi
   automatique chaque semaine ou chaque mois ; **barre de menu personnalisable** (voir `docs/RAPPORTS.md`)
+- **Ressources et historique** : disponibilité des voiturettes, chariots, sacs et caddies (statuts, maintenances
+  datées, conflits signalés au choix, réaffectation) ; historique non modifiable de chaque réservation et vue globale
+  filtrable (voir `docs/RESSOURCES-HISTORIQUE.md`)
 - **Design system** : thème clair / sombre (tokens dans `apps/web/src/theme.css`), page interne `/styleguide`,
   contrastes WCAG AA vérifiés par `node scripts/contrast.mjs` (voir `docs/THEME.md`)
 - Interface client en **français, anglais et arabe** (sélecteur de langue en haut à droite)

@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { assertCan, type Principal } from '../../modules/auth/permissions.js';
 import { getClub } from '../../modules/catalog/repository.js';
-import { analyticsCsv, BLOCKS, computeAnalytics, type ReportConfig } from '../../modules/analytics/service.js';
+import { analyticsCsv, BLOCKS, computeAnalytics, LEGACY_BLOCKS, type ReportConfig } from '../../modules/analytics/service.js';
 import { createSchedule, deleteSchedule, listSchedules, sendScheduleNow, setScheduleActive } from '../../modules/analytics/schedules.js';
 import { DomainError } from '../../shared/errors.js';
 import { actorOf } from '../auth.js';
@@ -16,7 +16,7 @@ const filters = {
   partnerId: z.uuid().nullable().optional(),
   categories: z.array(z.string().max(40)).max(20).nullable().optional(),
   compare: z.enum(['none', 'previous', 'last_year']).optional(),
-  blocks: z.array(z.enum(BLOCKS)).min(1).max(BLOCKS.length),
+  blocks: z.array(z.enum([...BLOCKS, ...(Object.keys(LEGACY_BLOCKS) as ['caddies'])])).min(1).max(BLOCKS.length + 1),
 };
 const configSchema = z.object({ ...filters, from: date, to: date });
 const scheduleSchema = z.object({
@@ -34,7 +34,7 @@ export function analyticsRoutes(app: FastifyInstance, deps: AppDeps) {
   async function checked(req: FastifyRequest, cfg: ReportConfig) {
     const p = principal(req);
     for (const id of cfg.clubIds) assertCan(p, 'reports.view', await getClub(deps.db, id));
-    return computeAnalytics(deps.db, cfg);
+    return computeAnalytics(deps.db, cfg, deps.now());
   }
 
   app.post('/api/analytics', async (req) => ({ report: await checked(req, configSchema.parse(req.body)) }));

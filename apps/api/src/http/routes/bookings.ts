@@ -11,6 +11,7 @@ import {
   type BookingContext,
 } from '../../modules/booking/service.js';
 import { getCourse, type Club } from '../../modules/catalog/repository.js';
+import { bookingHistory } from '../../modules/history/service.js';
 import { isCustomerVisibleToClub } from '../../modules/customers/service.js';
 import { DomainError } from '../../shared/errors.js';
 import { actorOf, clubOf } from '../auth.js';
@@ -118,17 +119,12 @@ export function bookingRoutes(app: FastifyInstance, deps: AppDeps) {
     return { booking };
   });
 
+  // Historique de la réservation (y compris son départ : caddie, départ parti…).
   app.get('/api/bookings/:id/history', async (req) => {
     const { id } = idParam.parse(req.params);
     const club = await clubOf.booking(deps, id);
     assertCan(req.principal, 'booking.view', club);
-    const { rows } = await deps.db.query(
-      `SELECT a.action, a.data, a.created_at AS "createdAt", a.actor_type AS "actorType", u.display_name AS "actorName"
-         FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id
-        WHERE a.entity_type = 'booking' AND a.entity_id = $1 ORDER BY a.id`,
-      [id],
-    );
-    return { history: rows };
+    return { history: await bookingHistory(deps.db, id) };
   });
 
   app.patch('/api/bookings/:id', async (req) => {

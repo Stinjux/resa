@@ -25,11 +25,17 @@ export async function capacityOn(q: Queryable, rt: ResourceType, date: string): 
   return rows[0]?.quantity ?? rt.totalQuantity;
 }
 
+/** Occupation d'un type sur la fenêtre : allocations actives ET indisponibilités
+ *  (une unité en maintenance ou un caddie absent compte comme une unité prise). */
 export async function activeUsages(q: Queryable, resourceTypeId: string, start: Date, end: Date): Promise<Usage[]> {
   const { rows } = await q.query(
     `SELECT lower(period) AS start, upper(period) AS end, quantity
        FROM resource_allocations
-      WHERE resource_type_id = $1 AND status = 'active' AND period && tstzrange($2, $3, '[)')`,
+      WHERE resource_type_id = $1 AND status = 'active' AND period && tstzrange($2, $3, '[)')
+     UNION ALL
+     SELECT greatest(starts_at, $2), least(coalesce(ends_at, 'infinity'), $3), 1
+       FROM resource_unavailabilities
+      WHERE resource_type_id = $1 AND cancelled_at IS NULL AND tstzrange(starts_at, ends_at, '[)') && tstzrange($2, $3, '[)')`,
     [resourceTypeId, start, end],
   );
   return rows.map((r) => ({ start: r.start.getTime(), end: r.end.getTime(), quantity: r.quantity }));

@@ -101,13 +101,16 @@ export async function openGames(q: Queryable, viewer: { organizationId: string; 
 
 /** Ouvrir / fermer sa propre partie. */
 export async function setBookingOpen(db: Db, customerId: string, bookingId: string, input: { isOpen: boolean; openNote?: string | null }, actor: Actor) {
-  const { rows } = await db.query(
-    `UPDATE bookings SET is_open = $3, open_note = CASE WHEN $3 THEN $4 END, updated_at = now()
-      WHERE id = $1 AND customer_id = $2 AND status = 'confirmed' AND NOT is_private RETURNING club_id`,
-    [bookingId, customerId, input.isOpen, input.openNote?.trim().slice(0, 200) || null],
-  );
-  if (!rows[0]) throw new DomainError('NOT_FOUND', 'Réservation introuvable (ou départ privé).');
-  await audit(db, { clubId: rows[0].club_id, actor, action: input.isOpen ? 'booking.opened' : 'booking.closed', entityType: 'booking', entityId: bookingId });
+  await withTransaction(db, async (tx) => {
+    const { rows } = await tx.query(
+      `UPDATE bookings SET is_open = $3, open_note = CASE WHEN $3 THEN $4 END, updated_at = now()
+        WHERE id = $1 AND customer_id = $2 AND status = 'confirmed' AND NOT is_private RETURNING club_id, reference`,
+      [bookingId, customerId, input.isOpen, input.openNote?.trim().slice(0, 200) || null],
+    );
+    if (!rows[0]) throw new DomainError('NOT_FOUND', 'Réservation introuvable (ou départ privé).');
+    await audit(tx, { clubId: rows[0].club_id, actor, action: input.isOpen ? 'booking.opened' : 'booking.closed', entityType: 'booking', entityId: bookingId,
+      data: { reference: rows[0].reference } });
+  });
 }
 
 // ---------------------------------------------------------------------------

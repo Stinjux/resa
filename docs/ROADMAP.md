@@ -36,6 +36,7 @@ Chaque étape livre un logiciel fonctionnel et testé.
 | 13 | **Tour-opérateurs et agences** : partenaires à tarifs négociés, voucher, allotements avec release automatique, portail partenaire, relevé de compte (voir `docs/PARTENAIRES.md`) | ✅ livré |
 | 14 | **Équipe** : comptes du personnel, rôles par golf, mot de passe provisoire à changer, réinitialisation, désactivation immédiate, changement de son mot de passe | ✅ livré |
 | 15 | **Membres et application golfeur** : abonnements (tarif, réservation anticipée), profil avec index, parties ouvertes à rejoindre, historique des parties avec partenaires, version mobile installable (voir `docs/MEMBRES.md`) | ✅ livré |
+| 17 | **Ressources, rapports de gestion et historique** : disponibilité par golf (statuts, maintenances datées, absences de caddies, conflits et réaffectation), indicateurs de gestion avec définitions, historique fiable non modifiable (voir `docs/RESSOURCES-HISTORIQUE.md`) | ✅ livré |
 | 16 | **Menu et rapports modulables** : barre de menu personnalisable, rapports multi-golfs à indicateurs choisis, filtres libres, comparaison, export Excel/PDF, envois automatiques par e-mail (voir `docs/RAPPORTS.md`) | ✅ livré |
 
 ## Suites possibles

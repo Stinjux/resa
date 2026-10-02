@@ -50,7 +50,7 @@ const SCHEMAS = {
   }),
   caddies: z.object({ displayName: z.string().min(1).max(100), phone: z.string().max(40).nullable(), active: z.boolean() }),
   'resource-units': z.object({
-    resourceTypeId: z.uuid(), label: z.string().min(1).max(40), status: z.enum(['available', 'maintenance', 'retired']),
+    resourceTypeId: z.uuid(), label: z.string().min(1).max(40), status: z.enum(['available', 'retired']),
   }),
   'membership-plans': z.object({
     code, name: z.string().min(1).max(100), priceCategory: z.string().min(1).max(40), bookingHorizonDays: z.number().int().min(1).max(730),

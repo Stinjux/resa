@@ -96,7 +96,7 @@ async function run(db: Db, sender: EmailSender, s: any, now: Date): Promise<'sen
   if (!creator) throw new DomainError('FORBIDDEN', 'Compte du créateur désactivé.');
   await assertReportsAccess(db, creator, s.config.clubIds);
   const { period, ...rest } = s.config as ScheduleConfig;
-  const result = await computeAnalytics(db, { ...rest, ...resolvePeriod(period, now) });
+  const result = await computeAnalytics(db, { ...rest, ...resolvePeriod(period, now) }, now);
   const title = s.name as string;
   const first = await getClub(db, s.config.clubIds[0]);
   await sender.send({

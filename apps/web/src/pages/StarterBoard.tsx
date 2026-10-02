@@ -3,6 +3,7 @@ import { get, put, type User } from '../api';
 import { addDays, longDate, money, todayIn } from '../format';
 import { ErrorBox, useClubs } from './common';
 import { PaymentBadge } from './PaymentSection';
+import { CaddieAssign, UnitsAssign } from '../components/resources';
 
 interface Equipment { allocationId: string; resourceTypeId: string; name: string; quantity: number; units: Array<{ id: string; label: string }> }
 interface BoardBooking { id: string; reference: string; players: number; customerName: string | null; playerNames: Array<string | null>;
@@ -20,16 +21,12 @@ export function StarterBoard({ user }: { user: User }) {
   const [date, setDate] = useState('');
   const [days, setDays] = useState(1);
   const [board, setBoard] = useState<BoardTeeTime[]>([]);
-  const [caddies, setCaddies] = useState<Array<{ id: string; displayName: string; active: boolean }>>([]);
-  const [units, setUnits] = useState<Array<{ id: string; label: string; status: string; resourceTypeId: string }>>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => { if (!clubId && clubs[0]) setClubId(clubs[0].id); }, [clubs]);
   useEffect(() => {
     if (!club) return;
     setDate(todayIn(club.timezone));
-    get(`/api/clubs/${club.id}/caddies`).then((r) => setCaddies(r.caddies));
-    get(`/api/clubs/${club.id}/resource-units`).then((r) => setUnits(r.units));
   }, [club?.id]);
 
   const load = useCallback(() => {
@@ -77,7 +74,6 @@ export function StarterBoard({ user }: { user: User }) {
           <h2 className="day-title">{longDate(day)}</h2>
           <div className="stack">
             {list.map((t) => {
-              const busyCaddies = new Set(board.filter((x) => x.teeTimeId !== t.teeTimeId && x.caddie.caddieId).map((x) => x.caddie.caddieId));
               return (
                 <div key={t.teeTimeId} className="card tt-card">
                   <div>
@@ -112,37 +108,17 @@ export function StarterBoard({ user }: { user: User }) {
                             : <> · <PaymentBadge status={b.paymentStatus} /></>}
                         </div>
                         {b.notes && <div className="small">📝 {b.notes}</div>}
-                        {b.equipment.map((e) => {
-                          const pool = units.filter((u) => u.resourceTypeId === e.resourceTypeId && u.status === 'available');
-                          return (
-                            <div key={e.allocationId} className="row small" style={{ gap: 6, alignItems: 'center', marginTop: 4 }}>
-                              <span>{e.name} × {e.quantity} :</span>
-                              {Array.from({ length: e.quantity }, (_, i) => (
-                                <select key={i} value={e.units[i]?.id ?? ''} onChange={(ev) => {
-                                  const ids = e.units.map((u) => u.id);
-                                  if (ev.target.value) ids[i] = ev.target.value; else ids.splice(i, 1);
-                                  act(() => put(`/api/allocations/${e.allocationId}/units`, { unitIds: ids.filter(Boolean) }));
-                                }}>
-                                  <option value="">— n° —</option>
-                                  {pool.map((u) => <option key={u.id} value={u.id}>{u.label}</option>)}
-                                </select>
-                              ))}
-                            </div>
-                          );
-                        })}
+                        {b.equipment.map((e) => (
+                          <div key={e.allocationId} className="small" style={{ marginTop: 4 }}>
+                            <span>{e.name} × {e.quantity}</span>
+                            <UnitsAssign allocationId={e.allocationId} typeName={e.name} quantity={e.quantity} units={e.units} canAssign onChanged={load} />
+                          </div>
+                        ))}
                       </div>
                     ))}
                   </div>
-                  <div>
-                    <label>Caddie
-                      <select value={t.caddie.caddieId ?? ''} disabled={!t.caddie.reserved}
-                        onChange={(e) => act(() => put(`/api/tee-times/${t.teeTimeId}/caddie`, { caddieId: e.target.value || null }))}>
-                        <option value="">{t.caddie.reserved ? '— à attribuer —' : 'non réservé'}</option>
-                        {caddies.filter((c) => c.active).map((c) => (
-                          <option key={c.id} value={c.id}>{c.displayName}{busyCaddies.has(c.id) ? ' (occupé ailleurs)' : ''}</option>
-                        ))}
-                      </select>
-                    </label>
+                  <div className="no-print-controls">
+                    <CaddieAssign teeTimeId={t.teeTimeId} reserved={t.caddie.reserved} name={t.caddie.name} canAssign onChanged={load} />
                   </div>
                 </div>
               );

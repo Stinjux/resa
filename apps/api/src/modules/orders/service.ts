@@ -244,7 +244,9 @@ export async function recordStaffPayment(
       );
       await enqueuePosJob(tx, { clubId: order.clubId, provider: order.posProvider, operation: 'record_payment', entityType: 'payment', entityId: rows[0].id });
       await audit(tx, { clubId: order.clubId, actor, action: 'payment.recorded', entityType: 'booking', entityId: bookingId,
-        data: { paymentId: rows[0].id, amountMinor: input.amountMinor, method: input.method } });
+        data: { paymentId: rows[0].id, amountMinor: input.amountMinor, currency: order.currency, method: input.method, payer: input.payer ?? 'customer',
+          balance: { from: s.balanceMinor, to: s.balanceMinor - input.amountMinor } },
+        reason: input.note ?? null });
     });
   } catch (err) {
     if (!isUnique(err, 'payments_club_id_idempotency_key_key')) throw err; // rejeu : déjà enregistré
@@ -280,7 +282,8 @@ export async function recordStaffRefund(
       );
       await enqueuePosJob(tx, { clubId: order.clubId, provider: order.posProvider, operation: 'record_refund', entityType: 'refund', entityId: rows[0].id });
       await audit(tx, { clubId: order.clubId, actor, action: 'refund.recorded', entityType: 'booking', entityId: bookingId,
-        data: { refundId: rows[0].id, amountMinor: input.amountMinor, method: input.method } });
+        data: { refundId: rows[0].id, amountMinor: input.amountMinor, currency: order.currency, method: input.method, payer: input.payer ?? 'customer' },
+        reason: input.reason ?? null });
     });
   } catch (err) {
     if (!isUnique(err, 'refunds_club_id_idempotency_key_key')) throw err;
@@ -335,6 +338,6 @@ export async function settleProviderPayment(
       [p.id, input.outcome],
     );
     await audit(tx, { clubId: p.clubId, actor: { type: 'system' }, action: `payment.${input.outcome}`, entityType: 'booking',
-      entityId: p.bookingId, data: { paymentId: p.id, provider: input.provider } });
+      entityId: p.bookingId, data: { paymentId: p.id, provider: input.provider, amountMinor: p.amountMinor, currency: p.currency } });
   });
 }

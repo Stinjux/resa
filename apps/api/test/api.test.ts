@@ -83,7 +83,8 @@ describe('réceptionniste : uniquement son golf', () => {
     expect(booking.pricing.totalMinor).toBe(2 * 130000 + 20000);
     expect(booking.pricing.dueOnSiteMinor).toBe(0);
     const history = (await call('GET', `/api/bookings/${booking.id}/history`, rec)).json().history;
-    expect(history[0]).toMatchObject({ action: 'booking.created', actorType: 'user', actorName: 'receptionist' });
+    expect(history[0]).toMatchObject({ action: 'booking.created', actor: { type: 'user', name: 'receptionist' } });
+    expect(history[0].text).toMatch(/^receptionist a créé la réservation /);
   });
 });
 

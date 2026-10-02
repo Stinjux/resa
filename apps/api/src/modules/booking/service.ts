@@ -20,7 +20,7 @@ import {
   type Holes,
   type TeeTimeState,
 } from '../../domain/tee-time-rules.js';
-import { audit, type Actor } from '../../shared/audit.js';
+import { audit, diff, type Actor } from '../../shared/audit.js';
 import { DomainError } from '../../shared/errors.js';
 import { instantToLocal } from '../../shared/time.js';
 import { activeMembership } from '../members/membership.js';
@@ -39,6 +39,7 @@ import {
   reserve,
 } from '../resources/service.js';
 import { enqueueBookingEmail } from '../notifications/service.js';
+import { caddieClash, lockCaddie, lockUnit, unitClash } from '../resources/availability.js';
 import { syncOrder, syncOrders } from '../orders/service.js';
 import { recomputeTeeTimeCharges } from '../pricing/service.js';
 import { caddieTypes, computeGrid, type GridSlot } from '../teesheet/service.js';
@@ -111,11 +112,81 @@ async function runTx<T>(db: Db, fn: (tx: Tx) => Promise<T>): Promise<T> {
   }
 }
 
-/** Recalcule les prix de tout le départ et aligne les commandes concernées. */
-async function reprice(tx: Tx, teeTimeId: string, club: Club, course: Course) {
+/**
+ * Recalcule les prix de tout le départ et aligne les commandes concernées.
+ * Les AUTRES réservations du départ dont le prix change (partage du caddie)
+ * reçoivent une ligne d'historique ; celle qui est modifiée (self) porte son
+ * prix dans son propre événement.
+ */
+async function reprice(tx: Tx, teeTimeId: string, club: Club, course: Course, actor?: Actor, self?: string | null) {
+  const before = await tx.query(
+    `SELECT id, reference, total_minor AS total FROM bookings WHERE tee_time_id = $1 AND status = 'confirmed'`, [teeTimeId]);
   const quotes = await recomputeTeeTimeCharges(tx, teeTimeId, club, course);
   await syncOrders(tx, quotes.keys());
+  if (actor) {
+    for (const b of before.rows) {
+      const q = quotes.get(b.id);
+      if (b.id === self || !q || b.total === null || b.total === q.totalMinor) continue;
+      await audit(tx, {
+        clubId: club.id, actor, action: 'booking.price_recalculated', entityType: 'booking', entityId: b.id,
+        data: { reference: b.reference, changes: { totalMinor: { from: b.total, to: q.totalMinor } }, currency: q.currency },
+        reason: 'Partage du caddie du départ recalculé',
+      });
+    }
+  }
   return quotes;
+}
+
+/** Date, heure et parcours lisibles d'un départ (pour l'historique). */
+async function placeOf(tx: Tx, teeTimeId: string): Promise<{ date: string; time: string; course: string }> {
+  const { rows: [r] } = await tx.query(
+    `SELECT t.starts_at, c.timezone, co.name FROM tee_times t JOIN clubs c ON c.id = t.club_id JOIN courses co ON co.id = t.course_id
+      WHERE t.id = $1`, [teeTimeId]);
+  const l = instantToLocal(r.starts_at, r.timezone);
+  return { date: l.date, time: l.time, course: r.name };
+}
+
+/** Autres réservations confirmées d'un départ (combinaison / séparation). */
+async function othersOn(tx: Tx, teeTimeId: string, exclude: string): Promise<Array<{ id: string; reference: string }>> {
+  const { rows } = await tx.query(
+    `SELECT id, reference FROM bookings WHERE tee_time_id = $1 AND status = 'confirmed' AND id <> $2 ORDER BY created_at`,
+    [teeTimeId, exclude]);
+  return rows;
+}
+
+const optionLabels = (options: ResolvedOption[]) => options.map((o) => `${o.rt.name} × ${o.quantity}`).sort();
+
+/** Unités nominatives affectées à la réservation, par type (avant libération). */
+async function unitSnapshot(tx: Tx, bookingId: string): Promise<Map<string, Array<{ id: string; label: string }>>> {
+  const { rows } = await tx.query(
+    `SELECT a.resource_type_id AS rt, u.id, u.label FROM allocation_units au
+       JOIN resource_allocations a ON a.id = au.allocation_id AND a.status = 'active' JOIN resource_units u ON u.id = au.unit_id
+      WHERE a.booking_id = $1 ORDER BY u.label`, [bookingId]);
+  const m = new Map<string, Array<{ id: string; label: string }>>();
+  for (const r of rows) m.set(r.rt, [...(m.get(r.rt) ?? []), { id: r.id, label: r.label }]);
+  return m;
+}
+
+/** Réaffecte, si elles restent libres sur la nouvelle période, les unités
+ *  qu'avait la réservation. Retourne celles qu'il faut réattribuer. */
+async function restoreUnits(tx: Tx, bookingId: string, snapshot: Map<string, Array<{ id: string; label: string }>>, timezone: string) {
+  const kept: string[] = [];
+  const dropped: string[] = [];
+  if (!snapshot.size) return { kept, dropped };
+  const { rows: allocs } = await tx.query(
+    `SELECT id, resource_type_id AS rt, quantity, period::text AS period FROM resource_allocations WHERE booking_id = $1 AND status = 'active'`,
+    [bookingId]);
+  for (const [rt, units] of snapshot) {
+    const a = allocs.find((x) => x.rt === rt);
+    for (const [i, u] of units.entries()) {
+      if (!a || i >= a.quantity) { dropped.push(u.label); continue; }
+      await lockUnit(tx, u.id);
+      if (await unitClash(tx, u.id, a.id, a.period, timezone)) { dropped.push(u.label); continue; }
+      await tx.query('INSERT INTO allocation_units (allocation_id, unit_id) VALUES ($1, $2)', [a.id, u.id]);
+      kept.push(u.label);
+    }
+  }
+  return { kept, dropped };
 }
 
 /** Frais d'annulation selon la politique du golf (0 dans le délai gratuit). */
@@ -150,7 +221,7 @@ export interface BookingDetail {
   partner: { id: string; name: string; reference: string | null } | null;
   teeTime: { id: string; courseId: string; startsAt: string; localDate: string; localTime: string };
   playerNames: Array<string | null>;
-  options: Array<{ resourceTypeId: string; code: string; name: string; quantity: number }>;
+  options: Array<{ resourceTypeId: string; code: string; name: string; quantity: number; allocationId: string; units: Array<{ id: string; label: string }> }>;
   customerCategory: string;
   caddiePayment: Payable;
   pricing: {
@@ -196,7 +267,11 @@ export async function getBooking(q: Db | Tx, bookingId: string): Promise<Booking
     bookingId,
   ]);
   const options = await q.query(
-    `SELECT rt.id AS "resourceTypeId", rt.code, rt.name, sum(a.quantity)::int AS quantity
+    `SELECT rt.id AS "resourceTypeId", rt.code, rt.name, sum(a.quantity)::int AS quantity, min(a.id::text) AS "allocationId",
+            coalesce((SELECT json_agg(json_build_object('id', u.id, 'label', u.label) ORDER BY u.label)
+                        FROM allocation_units au JOIN resource_units u ON u.id = au.unit_id
+                        JOIN resource_allocations a2 ON a2.id = au.allocation_id
+                       WHERE a2.booking_id = $1 AND a2.status = 'active' AND a2.resource_type_id = rt.id), '[]') AS units
        FROM resource_allocations a JOIN resource_types rt ON rt.id = a.resource_type_id
       WHERE a.booking_id = $1 AND a.status = 'active'
       GROUP BY rt.id, rt.code, rt.name, rt.sort_order ORDER BY rt.sort_order`,
@@ -616,7 +691,9 @@ async function placeBookings(
     await ensureCaddie(tx, teeTime, r.course, req.holes, caddieRts);
     await reserveOptions(tx, teeTime, r.course, req.holes, bookingId, optionsPerItem[i]!);
     await syncTeeTime(tx, teeTime.id);
-    const priced = (await reprice(tx, teeTime.id, theClub, r.course)).get(bookingId)!;
+    const priced = (await reprice(tx, teeTime.id, theClub, r.course, ctx.actor, bookingId)).get(bookingId)!;
+    const sharedWith = await othersOn(tx, teeTime.id, bookingId);
+    const local = instantToLocal(teeTime.startsAt, theClub.timezone);
 
     await audit(tx, {
       clubId: theClub.id,
@@ -628,15 +705,20 @@ async function placeBookings(
         reference,
         teeTimeId: teeTime.id,
         startsAt: teeTime.startsAt.toISOString(),
+        date: local.date,
+        time: local.time,
+        course: r.course.name,
         players: req.players,
         holes: req.holes,
         isPrivate: req.isPrivate,
         channel: ctx.channel,
         groupId,
-        options: optionsPerItem[i]!.map((o) => ({ code: o.rt.code, quantity: o.quantity })),
+        options: optionLabels(optionsPerItem[i]!),
+        sharedWith: sharedWith.map((b) => b.reference),
         totalMinor: priced.totalMinor,
         currency: priced.currency,
       },
+      refs: [teeTime.id, ...sharedWith.map((b) => b.id)],
     });
     bookingIds.push(bookingId);
   }
@@ -752,17 +834,22 @@ export async function cancelBooking(
     await syncTeeTime(tx, booking.teeTimeId);
     // Les réservations restantes se partagent désormais le caddie.
     const tt = teeTimes.get(booking.teeTimeId)!;
-    await reprice(tx, tt.id, club, await getCourse(tx, tt.courseId));
+    await reprice(tx, tt.id, club, await getCourse(tx, tt.courseId), opts.actor, bookingId);
     await syncOrder(tx, bookingId); // commande : frais d'annulation éventuels
     await enqueueBookingEmail(tx, bookingId, 'cancellation');
+    const remaining = await othersOn(tx, booking.teeTimeId, bookingId);
     await audit(tx, {
       clubId: booking.clubId,
       actor: opts.actor,
       action: 'booking.cancelled',
       entityType: 'booking',
       entityId: bookingId,
-      data: { reference: booking.reference, teeTimeId: booking.teeTimeId, releasedAllocations: released, reason: opts.reason ?? null,
-        cancellationFeeMinor: fee, feeWaived: !!opts.waiveFee },
+      data: { reference: booking.reference, teeTimeId: booking.teeTimeId, ...(await placeOf(tx, booking.teeTimeId)),
+        releasedAllocations: released, cancellationFeeMinor: fee, feeWaived: !!opts.waiveFee, currency: club.currency,
+        changes: { status: { from: 'confirmed', to: 'cancelled' }, totalMinor: { from: t.total, to: fee } },
+        separatedFrom: remaining.map((b) => b.reference) },
+      refs: [booking.teeTimeId, ...remaining.map((b) => b.id)],
+      reason: opts.reason ?? null,
     });
   });
   return getBooking(deps.db, bookingId);
@@ -821,17 +908,24 @@ export async function moveBooking(
     const options = await currentOptions(tx, booking.id, resourceTypes);
     await lockResourceTypes(tx, [...caddieRts.map((r) => r.id), ...options.map((o) => o.rt.id)]);
 
+    const fromPlace = await placeOf(tx, booking.teeTimeId);
+    const leftBehind = await othersOn(tx, booking.teeTimeId, booking.id);
+    const joined = await othersOn(tx, targetId, booking.id);
+    const { rows: [old] } = await tx.query('SELECT total_minor AS total FROM bookings WHERE id = $1', [booking.id]);
+    const units = await unitSnapshot(tx, booking.id);
     await releaseBookingAllocations(tx, booking.id);
     await tx.query('UPDATE bookings SET tee_time_id = $2, updated_at = now() WHERE id = $1', [booking.id, targetId]);
     await ensureCaddie(tx, targetTt, course, booking.holes, caddieRts);
     await reserveOptions(tx, targetTt, course, booking.holes, booking.id, options);
+    const unitsAfter = await restoreUnits(tx, booking.id, units, club.timezone);
     await syncTeeTime(tx, targetId);
     await syncTeeTime(tx, booking.teeTimeId);
-    const priced = (await reprice(tx, targetId, club, course)).get(booking.id)!;
+    const priced = (await reprice(tx, targetId, club, course, opts.actor, booking.id)).get(booking.id)!;
     // Les réservations restées sur l'ancien départ reprennent le caddie à leur compte.
     const sourceTt = teeTimes.get(booking.teeTimeId)!;
-    await reprice(tx, sourceTt.id, club, await getCourse(tx, sourceTt.courseId));
+    await reprice(tx, sourceTt.id, club, await getCourse(tx, sourceTt.courseId), opts.actor, booking.id);
     await enqueueBookingEmail(tx, booking.id, 'modification', `move:${deps.now().toISOString()}`);
+    const toPlace = await placeOf(tx, targetId);
 
     await audit(tx, {
       clubId: booking.clubId,
@@ -844,8 +938,20 @@ export async function moveBooking(
         fromTeeTimeId: booking.teeTimeId,
         toTeeTimeId: targetId,
         joinedExistingTeeTime: state.bookedPlayers > 0,
+        combinedWith: joined.map((b) => b.reference),
+        separatedFrom: leftBehind.map((b) => b.reference),
+        changes: {
+          ...(fromPlace.date !== toPlace.date ? { date: { from: fromPlace.date, to: toPlace.date } } : {}),
+          time: { from: fromPlace.time, to: toPlace.time },
+          ...(fromPlace.course !== toPlace.course ? { course: { from: fromPlace.course, to: toPlace.course } } : {}),
+          ...(old.total !== priced.totalMinor ? { totalMinor: { from: old.total, to: priced.totalMinor } } : {}),
+        },
+        currency: priced.currency,
+        unitsKept: unitsAfter.kept,
+        unitsToReassign: unitsAfter.dropped,
         totalMinor: priced.totalMinor,
       },
+      refs: [booking.teeTimeId, targetId, ...joined.map((b) => b.id), ...leftBehind.map((b) => b.id)],
     });
   });
   return getBooking(deps.db, bookingId);
@@ -899,17 +1005,34 @@ export async function updateBooking(
       ...newOptions.map((o) => o.rt.id),
     ]);
 
+    const { rows: [prev] } = await tx.query(
+      `SELECT total_minor AS total, customer_category AS "customerCategory", caddie_payment AS "caddiePayment", notes,
+              (SELECT array_agg(name ORDER BY position) FROM booking_players WHERE booking_id = b.id) AS names, c.timezone
+         FROM bookings b JOIN clubs c ON c.id = b.club_id WHERE b.id = $1`, [booking.id]);
+    let unitsAfter = { kept: [] as string[], dropped: [] as string[] };
     if (patch.options !== undefined || holesChanged) {
+      const units = await unitSnapshot(tx, booking.id);
       await releaseBookingAllocations(tx, booking.id);
       await reserveOptions(tx, teeTime, course, next.holes, booking.id, newOptions);
+      unitsAfter = await restoreUnits(tx, booking.id, units, prev.timezone);
     }
     if (holesChanged) {
       // Seule réservation du départ (garanti par assertCanJoin) : la période du
-      // caddie change avec la formule.
+      // caddie change avec la formule. Le caddie nommé est conservé s'il reste libre.
+      const { rows: [tt] } = await tx.query('SELECT caddie_id FROM tee_times WHERE id = $1', [teeTime.id]);
       await releaseTeeTimeAllocations(tx, teeTime.id);
       await ensureCaddie(tx, teeTime, course, next.holes, caddieRts);
-      // La période change : l'attribution nominative est à refaire par le starter.
-      await tx.query('UPDATE tee_times SET caddie_id = NULL WHERE id = $1', [teeTime.id]);
+      let keep = false;
+      if (tt.caddie_id) {
+        const { rows: [a] } = await tx.query(
+          `SELECT a.period::text AS period FROM resource_allocations a JOIN resource_types rt ON rt.id = a.resource_type_id
+            WHERE a.tee_time_id = $1 AND a.status = 'active' AND rt.kind = 'caddie'`, [teeTime.id]);
+        if (a) {
+          await lockCaddie(tx, tt.caddie_id);
+          keep = !(await caddieClash(tx, tt.caddie_id, teeTime.id, a.period, prev.timezone));
+        }
+      }
+      if (!keep) await tx.query('UPDATE tee_times SET caddie_id = NULL WHERE id = $1', [teeTime.id]);
     }
 
     await tx.query(
@@ -935,26 +1058,46 @@ export async function updateBooking(
       }
     }
     await syncTeeTime(tx, teeTime.id);
-    const priced = (await reprice(tx, teeTime.id, await getClub(tx, booking.clubId), course)).get(booking.id)!;
+    const priced = (await reprice(tx, teeTime.id, await getClub(tx, booking.clubId), course, opts.actor, booking.id)).get(booking.id)!;
     // Le client est prévenu si ce qui le concerne change (joueurs, formule, options, privé).
     if (next.players !== booking.players || holesChanged || next.isPrivate !== booking.isPrivate || patch.options !== undefined) {
       await enqueueBookingEmail(tx, booking.id, 'modification', `update:${deps.now().toISOString()}`);
     }
 
-    await audit(tx, {
-      clubId: booking.clubId,
-      actor: opts.actor,
-      action: 'booking.updated',
-      entityType: 'booking',
-      entityId: booking.id,
-      data: {
-        reference: booking.reference,
-        before: { players: booking.players, holes: booking.holes, isPrivate: booking.isPrivate,
-          options: oldOptions.map((o) => ({ code: o.rt.code, quantity: o.quantity })) },
-        after: { ...next, options: newOptions.map((o) => ({ code: o.rt.code, quantity: o.quantity })) },
-        totalMinor: priced.totalMinor,
-      },
-    });
+    // Historique : uniquement les champs réellement modifiés. Notes et noms des
+    // joueurs : on trace le fait, pas le contenu (données personnelles).
+    const { rows: [names] } = await tx.query(
+      'SELECT array_agg(name ORDER BY position) AS names FROM booking_players WHERE booking_id = $1', [booking.id]);
+    const changes = diff(
+      { players: booking.players, holes: booking.holes, isPrivate: booking.isPrivate, options: optionLabels(oldOptions),
+        customerCategory: prev.customerCategory, caddiePayment: prev.caddiePayment, totalMinor: prev.total },
+      { ...next, options: optionLabels(newOptions), customerCategory: patch.customerCategory ?? prev.customerCategory,
+        caddiePayment: patch.caddiePayment ?? prev.caddiePayment, totalMinor: priced.totalMinor },
+    );
+    const notesChanged = patch.notes !== undefined && (patch.notes ?? null) !== (prev.notes ?? null);
+    // Noms : seulement s'ils ont été saisis (ajouter un joueur sans nom n'est pas « modifier les noms »).
+    const named = (xs: Array<string | null> | null) => (xs ?? []).filter(Boolean);
+    const namesChanged = !!patch.playerNames && JSON.stringify(named(names.names)) !== JSON.stringify(named(prev.names));
+    if (Object.keys(changes).length || notesChanged || namesChanged) {
+      await audit(tx, {
+        clubId: booking.clubId,
+        actor: opts.actor,
+        action: 'booking.updated',
+        entityType: 'booking',
+        entityId: booking.id,
+        data: {
+          reference: booking.reference,
+          changes,
+          notesChanged,
+          playerNamesChanged: namesChanged,
+          currency: priced.currency,
+          unitsKept: unitsAfter.kept,
+          unitsToReassign: unitsAfter.dropped,
+          totalMinor: priced.totalMinor,
+        },
+        refs: [teeTime.id],
+      });
+    }
   });
   return getBooking(deps.db, bookingId);
 }

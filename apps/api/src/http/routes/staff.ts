@@ -5,6 +5,7 @@ import { assertCan, visibleDateRange } from '../../modules/auth/permissions.js';
 import { getClub } from '../../modules/catalog/repository.js';
 import { getClubCustomer, searchClubCustomers } from '../../modules/customers/service.js';
 import { assignCaddie, assignUnits, getStarterBoard, listCaddies, listUnits } from '../../modules/starter/service.js';
+import { searchHistory } from '../../modules/history/service.js';
 import { DomainError } from '../../shared/errors.js';
 import { actorOf, clubOf } from '../auth.js';
 import type { AppDeps } from '../server.js';
@@ -76,19 +77,12 @@ export function staffRoutes(app: FastifyInstance, deps: AppDeps) {
     return reply.status(204).send();
   });
 
-  // --- Historique du golf (administration)
+  // --- Historique du golf (administration) — conservé pour compatibilité ; voir /api/history.
   app.get('/api/clubs/:clubId/audit', async (req) => {
     const { clubId } = clubParam.parse(req.params);
     const club = await getClub(deps.db, clubId);
     assertCan(req.principal, 'audit.view', club);
-    const { limit } = z.object({ limit: z.coerce.number().int().min(1).max(500).default(100) }).parse(req.query);
-    const { rows } = await deps.db.query(
-      `SELECT a.id, a.action, a.entity_type AS "entityType", a.entity_id AS "entityId", a.data,
-              a.created_at AS "createdAt", a.actor_type AS "actorType", u.display_name AS "actorName"
-         FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id
-        WHERE a.club_id = $1 ORDER BY a.id DESC LIMIT $2`,
-      [clubId, limit],
-    );
-    return { entries: rows };
+    const { limit } = z.object({ limit: z.coerce.number().int().min(1).max(200).default(100) }).parse(req.query);
+    return { entries: (await searchHistory(deps.db, { clubIds: [clubId], limit })).events };
   });
 }

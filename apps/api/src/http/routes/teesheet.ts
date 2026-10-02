@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { assertCan, assertDateVisible, can } from '../../modules/auth/permissions.js';
+import { assertCan, assertDateVisible, can, isStaff } from '../../modules/auth/permissions.js';
 import { getCourse } from '../../modules/catalog/repository.js';
 import { quoteNewBooking } from '../../modules/pricing/service.js';
 import { getAvailability, getCalendar, getOptionsAvailability, getTeeSheet } from '../../modules/teesheet/service.js';
@@ -46,8 +46,9 @@ export function teeSheetRoutes(app: FastifyInstance, deps: AppDeps) {
   // Public : matériel disponible pour un créneau.
   app.get('/api/courses/:courseId/options', async (req) => {
     const { courseId } = courseParam.parse(req.params);
-    const q = z.object({ startsAt: z.iso.datetime({ offset: true }), holes: holesQuery }).parse(req.query);
-    return { options: await getOptionsAvailability(deps.db, { courseId, startsAt: new Date(q.startsAt), holes: q.holes }) };
+    const q = z.object({ startsAt: z.iso.datetime({ offset: true }), holes: holesQuery, excludeBookingId: z.uuid().optional() }).parse(req.query);
+    return { options: await getOptionsAvailability(deps.db, { courseId, startsAt: new Date(q.startsAt), holes: q.holes,
+      excludeBookingId: isStaff(req.principal) ? q.excludeBookingId : null }) };
   });
 
   // Public : devis détaillé avant réservation. La catégorie tarifaire n'est

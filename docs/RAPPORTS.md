@@ -14,7 +14,7 @@ Menu **Rapports** (direction, administrateur du groupe).
 
 **Filtres** (une ligne au-dessus des indicateurs) :
 - golfs : un, plusieurs ou tous (vue groupe) ;
-- période libre, raccourcis (7 jours, ce mois, mois dernier, depuis janvier), jusqu'à 366 jours ;
+- période : **Aujourd'hui**, **Cette semaine** (lundi → dimanche), **Ce mois** (mois civil) ou **Personnalisée** (jusqu'à 366 jours) ;
 - comparaison : période précédente de même durée, ou même période l'an dernier ;
 - **Filtres ▾** : canaux (web, téléphone, WhatsApp, portail partenaire…),
   catégories de client (standard, membre, résident, tour-opérateur…), partenaire.
@@ -65,3 +65,25 @@ revérifiés : si son compte est désactivé ou n'a plus accès à un golf, l'en
 | `web/src/components/NavBar.tsx` | Barre de menu modulable |
 | `web/src/pages/Reports.tsx` | Page Rapports |
 | `test/analytics.test.ts` | Blocs, filtres, comparaison, envois, droits, préférences |
+
+
+## Indicateurs de gestion (définitions)
+
+Chaque bloc affiche « Comment c'est calculé » ; l'export CSV reprend ces définitions.
+
+- **Périmètre** : réservations dont le départ a lieu dans la période. Un départ
+  partagé par plusieurs réservations n'est compté qu'une fois (départs, caddies).
+- **Taux d'occupation** = joueurs des réservations confirmées (absences incluses)
+  ÷ places ouvertes à la vente (grille d'ouverture − départs bloqués ; les
+  départs tenus pour un allotement restent ouverts).
+- **Départs exclusifs** présentés à part : nombre, joueurs, places neutralisées.
+- **Montants** séparés, par devise (jamais additionnés entre devises) :
+  réservé, frais d'annulation, encaissé, remboursé, net, solde à recevoir, à rembourser.
+  Seuls les paiements **confirmés** comptent.
+- **Annulations et absences** : absences rapportées aux départs déjà passés.
+- **Matériel** : unités réservées, pic simultané / parc, jours au complet, part des numéros affectés.
+- **Caddies** : départs avec caddie, dont nommé ; par caddie, départs et jours travaillés.
+
+**Données non disponibles** : affiché (au lieu d'un faux zéro) avec la raison,
+par exemple absences sans pointage, caddies non nommés, golfs de devises
+différentes pour un montant global.

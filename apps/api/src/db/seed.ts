@@ -14,6 +14,7 @@ import { createMembership } from '../modules/members/service.js';
 import { createBooking, createGroupBooking, moveBooking } from '../modules/booking/service.js';
 import { recordStaffPayment } from '../modules/orders/service.js';
 import { assignCaddie, assignUnits } from '../modules/starter/service.js';
+import { declareUnavailability } from '../modules/resources/availability.js';
 import { getAvailability } from '../modules/teesheet/service.js';
 import { getClub, getCourse } from '../modules/catalog/repository.js';
 import { receiveInbound } from '../modules/messaging/service.js';
@@ -218,6 +219,17 @@ async function seedBookings(db: Db, club: { id: string; courseId: string }) {
   const due = async (id: string) => (await db.query('SELECT total_minor FROM orders WHERE booking_id = $1', [id])).rows[0].total_minor;
   await recordStaffPayment(db, b.booking.id, { amountMinor: await due(b.booking.id), method: 'card_terminal', note: 'Payé à la réservation' }, actor);
   await recordStaffPayment(db, privateBooking.booking.id, { amountMinor: 200000, method: 'cash', note: 'Acompte' }, actor);
+
+  // 8. Disponibilités : une voiturette en maintenance (jusqu'à nouvel ordre), un caddie en congé demain.
+  const lastCart = await db.query(
+    `SELECT u.id FROM resource_units u JOIN resource_types rt ON rt.id = u.resource_type_id
+      WHERE rt.club_id = $1 AND rt.code = 'CART' ORDER BY u.label DESC LIMIT 1`, [club.id]);
+  await declareUnavailability(db, club.id, { unitId: lastCart.rows[0].id, startsAt: new Date(), endsAt: null, reason: 'Batterie à remplacer' },
+    actor, new Date());
+  const lastCaddie = await db.query(`SELECT id FROM caddies WHERE club_id = $1 ORDER BY display_name DESC LIMIT 1`, [club.id]);
+  const tomorrow = DateTime.now().setZone('Africa/Casablanca').plus({ days: 1 }).startOf('day');
+  await declareUnavailability(db, club.id, { caddieId: lastCaddie.rows[0].id, startsAt: tomorrow.toJSDate(),
+    endsAt: tomorrow.plus({ days: 1 }).toJSDate(), reason: 'Congé' }, actor, new Date());
 }
 
 /** Une demande WhatsApp en attente de validation (comme si l'IA l'avait préparée). */

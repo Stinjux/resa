@@ -44,7 +44,7 @@ export async function blockRange(
       [course.id, slots.map((s) => s.startsAt)],
     );
     await audit(tx, { clubId: club.id, actor, action: 'tee_times.blocked', entityType: 'course', entityId: course.id,
-      data: { date: input.date, from, to, reason: input.reason, blocked } });
+      data: { date: input.date, from, to, blocked, course: course.name }, reason: input.reason });
     return { blocked, withBookings: rows[0].n };
   });
 }
@@ -54,15 +54,17 @@ export async function unblockRange(db: Db, input: { courseId: string; date: stri
   const from = parseTimeMaybe(input.from) ?? '00:00';
   const to = parseTimeMaybe(input.to) ?? '23:59';
   const club = await getClub(db, course.clubId);
-  const res = await db.query(
+  return withTransaction(db, async (tx) => {
+  const res = await tx.query(
     `UPDATE tee_times SET blocked_reason = NULL, blocked_by = NULL, blocked_at = NULL, held_allotment_id = NULL, held_until = NULL, updated_at = now()
       WHERE course_id = $1 AND local_date = $2 AND blocked_reason IS NOT NULL
         AND to_char(starts_at AT TIME ZONE $5, 'HH24:MI') BETWEEN $3 AND $4`,
     [course.id, input.date, from, to, club.timezone],
   );
-  await audit(db, { clubId: club.id, actor, action: 'tee_times.unblocked', entityType: 'course', entityId: course.id,
-    data: { date: input.date, from, to, unblocked: res.rowCount } });
+  await audit(tx, { clubId: club.id, actor, action: 'tee_times.unblocked', entityType: 'course', entityId: course.id,
+    data: { date: input.date, from, to, unblocked: res.rowCount, course: course.name } });
   return { unblocked: res.rowCount ?? 0 };
+  });
 }
 
 /** Arrivée ou absence d'une réservation. Une absence applique la politique du golf sur le montant dû. */
@@ -85,11 +87,18 @@ export async function setCheckin(db: Db, bookingId: string, status: 'expected' |
 }
 
 export async function setStarted(db: Db, teeTimeId: string, started: boolean, actor: Actor) {
-  const { rows: [t] } = await db.query(
-    `UPDATE tee_times SET started_at = CASE WHEN $2 THEN coalesce(started_at, now()) END, updated_at = now() WHERE id = $1
-     RETURNING club_id`, [teeTimeId, started]);
-  if (!t) throw new DomainError('NOT_FOUND', 'Départ introuvable.');
-  await audit(db, { clubId: t.club_id, actor, action: started ? 'tee_time.started' : 'tee_time.start_undone', entityType: 'tee_time', entityId: teeTimeId });
+  await withTransaction(db, async (tx) => {
+    const { rows: [t] } = await tx.query(
+      `UPDATE tee_times SET started_at = CASE WHEN $2 THEN coalesce(started_at, now()) END, updated_at = now() WHERE id = $1
+       RETURNING club_id`, [teeTimeId, started]);
+    if (!t) throw new DomainError('NOT_FOUND', 'Départ introuvable.');
+    const { rows: bookings } = await tx.query(
+      `SELECT b.id, b.reference, to_char(t.starts_at AT TIME ZONE c.timezone, 'HH24:MI') AS time
+         FROM bookings b JOIN tee_times t ON t.id = b.tee_time_id JOIN clubs c ON c.id = t.club_id
+        WHERE b.tee_time_id = $1 AND b.status = 'confirmed'`, [teeTimeId]);
+    await audit(tx, { clubId: t.club_id, actor, action: started ? 'tee_time.started' : 'tee_time.start_undone', entityType: 'tee_time',
+      entityId: teeTimeId, data: { time: bookings[0]?.time ?? null, references: bookings.map((b) => b.reference) }, refs: bookings.map((b) => b.id) });
+  });
 }
 
 const CHECKIN_LABEL = { expected: 'attendu', arrived: 'arrivé', no_show: 'absent' } as const;

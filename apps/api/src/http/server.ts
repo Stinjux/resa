@@ -26,6 +26,7 @@ import { staffRoutes } from './routes/staff.js';
 import { bookingRoutes } from './routes/bookings.js';
 import { catalogRoutes } from './routes/catalog.js';
 import { teeSheetRoutes } from './routes/teesheet.js';
+import { resourceRoutes } from './routes/resources.js';
 
 export interface AppDeps {
   db: Db;
@@ -91,6 +92,7 @@ export function buildServer(input: Omit<AppDeps, 'posRegistry' | 'ai' | 'messagi
     userRoutes(api, deps);
     memberRoutes(api, deps);
     analyticsRoutes(api, deps);
+    resourceRoutes(api, deps);
   });
 
   if (opts.webRoot && existsSync(opts.webRoot)) {

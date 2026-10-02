@@ -409,7 +409,8 @@ function Units({ cfg, save }: { cfg: any; save: Save }) {
   const fields: Field[] = [
     { key: 'resourceTypeId', label: 'Type', type: 'select', createOnly: true, options: types.map((t: any) => [t.id, t.name]) },
     { key: 'label', label: 'Numéro / étiquette', type: 'text', nullable: false },
-    { key: 'status', label: 'État', type: 'select', options: [['available', 'Disponible'], ['maintenance', 'En maintenance'], ['retired', 'Retiré']] },
+    { key: 'status', label: 'État', type: 'select', options: [['available', 'En service'], ['retired', 'Retiré définitivement']],
+      hint: 'Pour une panne ou un entretien temporaire : page Ressources › Mettre en maintenance (avec dates et motif).' },
   ];
   const typeName = (id: string) => types.find((t: any) => t.id === id)?.name;
   return (
@@ -417,7 +418,7 @@ function Units({ cfg, save }: { cfg: any; save: Save }) {
       newValues={{ resourceTypeId: types[0]?.id, status: 'available' }}
       columns={['N°', 'Type', 'État']}
       render={(u) => [<strong>{u.label}</strong>, typeName(u.resourceTypeId),
-        u.status === 'available' ? 'disponible' : u.status === 'maintenance' ? <span className="badge warn">maintenance</span> : 'retiré']} />
+        u.status === 'retired' ? 'retiré' : 'en service']} />
   );
 }
 

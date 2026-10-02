@@ -15,12 +15,14 @@ import { Profile } from './pages/Profile';
 import { applyTheme, storedTheme, type ThemeChoice } from './theme';
 import { NavBar } from './components/NavBar';
 import { Reports } from './pages/Reports';
+import { Resources } from './pages/Resources';
+import { History } from './pages/History';
 import { Login } from './pages/Login';
 import { MyBookings } from './pages/MyBookings';
 import { StarterBoard } from './pages/StarterBoard';
 import { TeeSheet } from './pages/TeeSheet';
 
-type Page = 'book' | 'sheet' | 'starter' | 'mine' | 'config' | 'assistant' | 'reports' | 'inbox' | 'cash' | 'partner' | 'team' | 'password' | 'open' | 'profile' | 'members' | 'login';
+type Page = 'book' | 'sheet' | 'resources' | 'history' | 'starter' | 'mine' | 'config' | 'assistant' | 'reports' | 'inbox' | 'cash' | 'partner' | 'team' | 'password' | 'open' | 'profile' | 'members' | 'login';
 
 export function hasRole(user: User | null, roles: string[]): boolean {
   return !!user?.roles.some((r) => roles.includes(r.role));
@@ -82,10 +84,12 @@ export function App() {
   const tabs: Array<[Page, string, boolean]> = [
     ['sheet', t('nav.sheet'), canSheet],
     ['starter', t('nav.starter'), canStarter],
+    ['resources', 'Ressources', canSheet],
     ['inbox', pending ? `Demandes (${pending})` : 'Demandes', canValidate],
     ['cash', 'Caisse', hasRole(user, ['org_admin', 'club_admin', 'receptionist'])],
     ['assistant', 'Assistant IA', canSheet],
     ['reports', 'Rapports', hasRole(user, ['org_admin', 'club_admin'])],
+    ['history', 'Historique', hasRole(user, ['org_admin', 'club_admin'])],
     ['config', t('nav.config'), hasRole(user, ['org_admin', 'club_admin'])],
     ['team', 'Équipe', hasRole(user, ['org_admin', 'club_admin'])],
     ['partner', t('nav.partner'), !!user?.partnerId],
@@ -130,6 +134,8 @@ export function App() {
         {page === 'book' && <BookingFlow user={user} onDone={() => user?.customerId && setPage('mine')} />}
         {page === 'sheet' && user && <TeeSheet user={user} />}
         {page === 'starter' && user && <StarterBoard user={user} />}
+        {page === 'resources' && user && <Resources user={user} />}
+        {page === 'history' && user && <History user={user} />}
         {page === 'mine' && user && <MyBookings />}
         {page === 'config' && user && <Config user={user} />}
         {page === 'assistant' && user && <Assistant />}

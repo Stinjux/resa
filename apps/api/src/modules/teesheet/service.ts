@@ -397,7 +397,7 @@ export async function getCalendar(
 /** Options (matériel) disponibles pour un créneau et une formule donnés. */
 export async function getOptionsAvailability(
   q: Queryable,
-  params: { courseId: string; startsAt: Date; holes: Holes },
+  params: { courseId: string; startsAt: Date; holes: Holes; excludeBookingId?: string | null },
 ) {
   const course = await getCourse(q, params.courseId);
   const club = await getClub(q, course.clubId);
@@ -406,8 +406,20 @@ export async function getOptionsAvailability(
   return Promise.all(
     types.map(async (rt) => {
       const p = usagePeriod(params.startsAt, params.holes, course, rt.bufferMinutes);
-      const free = await availableQuantity(q, rt, date, p.start, p.end);
+      let free = await availableQuantity(q, rt, date, p.start, p.end);
+      let current = 0;
+      if (params.excludeBookingId) {
+        // Modification : la quantité déjà tenue par cette réservation reste disponible pour elle.
+        const { rows } = await q.query(
+          `SELECT coalesce(sum(quantity), 0)::int AS n FROM resource_allocations WHERE booking_id = $1 AND resource_type_id = $2 AND status = 'active'`,
+          [params.excludeBookingId, rt.id]);
+        current = rows[0].n;
+        free += current;
+      }
       return {
+        current,
+        start: p.start.toISOString(),
+        end: p.end.toISOString(),
         resourceTypeId: rt.id,
         code: rt.code,
         kind: rt.kind,
@@ -416,6 +428,9 @@ export async function getOptionsAvailability(
         unitPriceMinor: params.holes === 9 ? rt.price9Minor : rt.price18Minor,
         currency: club.currency,
         available: rt.maxPerBooking ? Math.min(free, rt.maxPerBooking) : free,
+        /** Stock réellement libre sur toute la période (sans plafond par réservation). */
+        free,
+        maxPerBooking: rt.maxPerBooking,
       };
     }),
   );

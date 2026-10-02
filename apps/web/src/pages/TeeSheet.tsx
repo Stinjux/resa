@@ -3,6 +3,7 @@ import { download, get, patch, post, put, type Club, type User } from '../api';
 import { addDays, CHANNEL_LABEL, longDate, money, todayIn } from '../format';
 import { ErrorBox, useClubs, useCourses } from './common';
 import { CancelControl, PaymentBadge, PaymentSection } from './PaymentSection';
+import { BookingResources, HistoryList, type HistoryEvent } from '../components/resources';
 
 interface SheetBooking {
   id: string; reference: string; players: number; holes: number; isPrivate: boolean; channel: string;
@@ -23,6 +24,10 @@ type PanelState = { kind: 'block' } | { kind: 'new'; row: SheetRow } | { kind: '
 
 function canFinance(user: User, clubId: string) {
   return user.roles.some((r) => (r.clubId === clubId && r.role === 'club_admin') || r.role === 'org_admin');
+}
+
+function canAssign(user: User, clubId: string) {
+  return user.roles.some((r) => (r.clubId === clubId && ['club_admin', 'starter'].includes(r.role)) || r.role === 'org_admin');
 }
 
 function canManage(user: User, clubId: string) {
@@ -54,6 +59,12 @@ export function TeeSheet({ user }: { user: User }) {
       .catch((e) => { setRows([]); setError(e.message); });
   }, [courseId, date]);
   useEffect(() => { load(); setPanel(null); }, [load]);
+  const [res, setRes] = useState<any>(null);
+  const loadResources = useCallback(() => {
+    if (!clubId || !date) return;
+    get(`/api/clubs/${clubId}/resources?date=${date}`).then((r) => setRes(r.board)).catch(() => setRes(null));
+  }, [clubId, date]);
+  useEffect(loadResources, [loadResources]);
 
   const manage = !!clubId && canManage(user, clubId);
   const visible = onlyBooked ? rows.filter((r) => r.bookedPlayers > 0) : rows;
@@ -66,8 +77,11 @@ export function TeeSheet({ user }: { user: User }) {
     };
   }, [rows]);
 
-  function refresh(bookingId?: string) {
+  const [flash, setFlash] = useState<string | null>(null);
+  function refresh(bookingId?: string, message?: string) {
+    setFlash(message ?? null);
     load();
+    loadResources();
     setPanelVersion((v) => v + 1);
     setPanel(bookingId ? { kind: 'booking', id: bookingId } : null);
   }
@@ -98,6 +112,7 @@ export function TeeSheet({ user }: { user: User }) {
       </div>
       {date && <h2 style={{ textTransform: 'capitalize' }}>{club?.name} — {longDate(date)}</h2>}
       <ErrorBox error={error} />
+      {res && <ResourceStrip board={res} />}
       <div className="layout">
         <div className="card table-wrap">
           <table className="sheet">
@@ -126,12 +141,12 @@ export function TeeSheet({ user }: { user: User }) {
                     <td>{r.holes ? `${r.holes} t.` : <span className="muted small">{r.allowedHoles.join('/')}</span>}</td>
                     <td>
                       {r.bookings.map((b) => (
-                        <span key={b.id} className="chip" onClick={(e) => { e.stopPropagation(); setPanel({ kind: 'booking', id: b.id }); }}>
+                        <span key={b.id} className="chip" onClick={(e) => { e.stopPropagation(); setFlash(null); setPanel({ kind: 'booking', id: b.id }); }}>
                           <strong>{b.customerName ?? b.reference}</strong>{b.customerHandicap !== null && <span className="small muted"> ({b.customerHandicap})</span>} · {b.players} j
                           {b.isOpen && <span className="badge ok" title="Partie ouverte : d'autres golfeurs peuvent rejoindre">🤝</span>}
                           <span className="muted small">{CHANNEL_LABEL[b.channel]}</span>
                           {b.partnerName && <span className="badge" title={b.partnerReference ? `Voucher ${b.partnerReference}` : undefined}>🧳 {b.partnerName}</span>}
-                          {b.resources.length > 0 && <span className="muted small">🛒{b.resources.reduce((n, x) => n + x.quantity, 0)}</span>}
+                          {b.resources.map((x) => <span key={x.code} className="muted small" title={x.name}> · {x.quantity} {x.name.replace(/^Sac de location /, 'sac ').toLowerCase()}</span>)}
                           {b.paymentStatus && b.paymentStatus !== 'unpaid' && <PaymentBadge status={b.paymentStatus} />}
                           {b.checkinStatus === 'arrived' && <span className="badge ok">arrivé</span>}
                           {b.checkinStatus === 'no_show' && <span className="badge warn">absent</span>}
@@ -140,7 +155,7 @@ export function TeeSheet({ user }: { user: User }) {
                       ))}
                     </td>
                     <td className="small">
-                      {r.caddie.name ? r.caddie.name : r.caddie.reserved ? <span className="badge ok">réservé</span> : ''}
+                      {r.caddie.name ? r.caddie.name : r.caddie.reserved ? <span className="badge warn">à nommer</span> : ''}
                     </td>
                   </tr>
                 );
@@ -168,6 +183,7 @@ export function TeeSheet({ user }: { user: User }) {
           )}
           {panel?.kind === 'booking' && (
             <BookingPanel key={`${panel.id}-${panelVersion}`} id={panel.id} rows={rows} courseId={courseId!} canManage={manage}
+              canAssign={!!clubId && canAssign(user, clubId)} timezone={club?.timezone} flash={flash}
               canFinance={!!clubId && canFinance(user, clubId)} onChanged={refresh} onClose={() => setPanel(null)} />
           )}
         </div>
@@ -428,26 +444,32 @@ function GroupPanel({ club, courseId, row, rows, onSaved, onClose }: {
   );
 }
 
-function BookingPanel({ id, rows, courseId, canManage, canFinance, onChanged, onClose }: {
-  id: string; rows: SheetRow[]; courseId: string; canManage: boolean; canFinance: boolean; onChanged: (id?: string) => void; onClose: () => void;
+function BookingPanel({ id, rows, courseId, canManage, canAssign, canFinance, timezone, flash, onChanged, onClose }: {
+  id: string; rows: SheetRow[]; courseId: string; canManage: boolean; canAssign: boolean; canFinance: boolean; timezone?: string; flash: string | null;
+  onChanged: (id?: string, message?: string) => void; onClose: () => void;
 }) {
   const [b, setB] = useState<any>(null);
-  const [history, setHistory] = useState<any[]>([]);
+  const [history, setHistory] = useState<HistoryEvent[] | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
   const [target, setTarget] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     get(`/api/bookings/${id}`).then((r) => setB(r.booking)).catch((e) => setError(e.message));
-    get(`/api/bookings/${id}/history`).then((r) => setHistory(r.history)).catch(() => undefined);
   }, [id]);
+  useEffect(() => {
+    if (!showHistory) return;
+    setHistory(null);
+    get(`/api/bookings/${id}/history`).then((r) => setHistory(r.history)).catch((e) => setError(e.message));
+  }, [id, showHistory]);
 
-  async function run(fn: () => Promise<unknown>, keepOpen = true) {
+  async function run(fn: () => Promise<unknown>, message = 'Modification enregistrée. Prix et disponibilités recalculés.') {
     setBusy(true);
     setError(null);
     try {
       await fn();
-      onChanged(keepOpen ? id : undefined);
+      onChanged(id, message);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -455,7 +477,22 @@ function BookingPanel({ id, rows, courseId, canManage, canFinance, onChanged, on
     }
   }
 
-  if (!b) return <div className="card"><ErrorBox error={error} /></div>;
+  if (!b) return <div className="card">{error ? <ErrorBox error={error} /> : <span className="small muted" aria-live="polite">Chargement…</span>}</div>;
+  if (showHistory) {
+    return (
+      <div className="card stack">
+        <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+          <button className="btn sm ghost" onClick={() => setShowHistory(false)}>‹ Retour à {b.reference}</button>
+          <button className="btn sm" onClick={onClose} aria-label="Fermer le panneau">✕</button>
+        </div>
+        <h2 style={{ margin: 0 }}>Historique · {b.reference}</h2>
+        <p className="caption muted" style={{ margin: 0 }}>Enregistré automatiquement par le serveur, non modifiable. Inclut le caddie et le matériel du départ.</p>
+        {!history && !error && <span className="small muted" aria-live="polite">Chargement…</span>}
+        {history && <HistoryList events={history} timezone={timezone} />}
+        <ErrorBox error={error} />
+      </div>
+    );
+  }
   const row = rows.find((r) => r.teeTimeId === b.teeTime.id);
   const others = row?.bookings.filter((x) => x.id !== b.id) ?? [];
   const maxPlayers = Math.min(4, (row?.maxPlayers ?? 4) - (row?.bookedPlayers ?? b.players) + b.players);
@@ -471,8 +508,12 @@ function BookingPanel({ id, rows, courseId, canManage, canFinance, onChanged, on
     <div className="card stack">
       <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
         <h2 style={{ margin: 0 }}>{b.reference}</h2>
-        <button className="btn sm" onClick={onClose}>✕</button>
+        <div className="row" style={{ gap: 4 }}>
+          <button className="btn sm" onClick={() => setShowHistory(true)}>🕘 Historique</button>
+          <button className="btn sm" onClick={onClose} aria-label="Fermer le panneau">✕</button>
+        </div>
       </div>
+      {flash && <div className="alert ok" role="status">{flash}</div>}
       <div>
         <strong>{b.teeTime.localTime}</strong> · {b.players} joueur(s) · {b.holes} trous · {CHANNEL_LABEL[b.channel]}
         {b.isPrivate && <span className="badge private"> Privé</span>}
@@ -487,6 +528,9 @@ function BookingPanel({ id, rows, courseId, canManage, canFinance, onChanged, on
       {others.length > 0 && <div className="small muted">Partage le départ avec : {others.map((o) => `${o.customerName ?? o.reference} (${o.players} j)`).join(', ')}</div>}
       {b.notes && <div className="small">📝 {b.notes}</div>}
       {b.status === 'confirmed' && <QuoteLines quote={{ ...b.pricing, lines: b.pricing.lines }} />}
+      <BookingResources booking={b} courseId={b.teeTime.courseId} timezone={timezone}
+        caddie={row ? row.caddie : null} sharedWith={others.map((o) => o.customerName ?? o.reference)}
+        canBook={canManage} canAssign={canAssign} onChanged={(msg) => onChanged(id, msg)} />
       <PaymentSection key={b.status + b.pricing.totalMinor} bookingId={id} canManage={canManage} canFinance={canFinance} onChanged={() => onChanged(id)} />
 
       {canManage && b.status === 'confirmed' && (
@@ -495,7 +539,7 @@ function BookingPanel({ id, rows, courseId, canManage, canFinance, onChanged, on
           <div className="row">
             {([['arrived', 'Arrivé'], ['no_show', 'Absent'], ['expected', 'Attendu']] as const).map(([st, label]) => (
               <button key={st} className={`btn sm ${row?.bookings.find((x) => x.id === b.id)?.checkinStatus === st ? 'primary' : ''}`} disabled={busy}
-                onClick={() => run(() => put(`/api/bookings/${id}/checkin`, { status: st }))}>{label}</button>
+                onClick={() => run(() => put(`/api/bookings/${id}/checkin`, { status: st }), `Statut d'accueil : ${label.toLowerCase()}.`)}>{label}</button>
             ))}
           </div>
           <h3>Modifier</h3>
@@ -520,32 +564,38 @@ function BookingPanel({ id, rows, courseId, canManage, canFinance, onChanged, on
             <button className="btn" disabled={!target || busy} onClick={() => run(() => {
               const r = rows.find((x) => x.startsAt === target)!;
               return post(`/api/bookings/${id}/move`, r.teeTimeId ? { teeTimeId: r.teeTimeId } : { courseId, startsAt: r.startsAt });
-            })}>Valider</button>
+            }, 'Réservation déplacée. Caddie, matériel et prix recalculés.')}>Valider</button>
           </div>
-          <CancelControl bookingId={id} onCancelled={() => onChanged(id)} />
+          <CancelControl bookingId={id} onCancelled={() => onChanged(id, 'Réservation annulée : caddie et matériel libérés.')} />
         </>
       )}
       <ErrorBox error={error} />
-      {history.length > 0 && (
-        <>
-          <h3>Historique</h3>
-          <div className="small muted stack" style={{ gap: 4 }}>
-            {history.map((h, i) => (
-              <div key={i}>{new Date(h.createdAt).toLocaleString('fr-FR')} · {HISTORY_LABEL[h.action] ?? h.action}{h.actorName && ` · ${h.actorName}`}</div>
-            ))}
-          </div>
-        </>
-      )}
     </div>
   );
 }
 
-const HISTORY_LABEL: Record<string, string> = {
-  'booking.created': 'Création', 'booking.updated': 'Modification', 'booking.moved': 'Déplacement / réunion',
-  'booking.cancelled': 'Annulation', 'allocation.units_assigned': 'Matériel attribué',
-  'payment.recorded': 'Encaissement', 'refund.recorded': 'Remboursement', 'payment.confirmed': 'Paiement confirmé',
-  'payment.failed': 'Paiement échoué',
-};
+/** Disponibilités du jour, en tête de la feuille : quantités libres et conflits à traiter. */
+function ResourceStrip({ board }: { board: any }) {
+  const types = board.types as any[];
+  if (!types.length) return null;
+  return (
+    <div className="res-strip no-print" aria-label="Disponibilités du matériel et des caddies">
+      {types.map((t) => {
+        const free = board.isToday ? t.availableNow : t.lowestAvailable;
+        return (
+          <span key={t.id} className={`res-chip ${free === 0 ? 'none' : ''}`}
+            title={board.isToday ? `${t.inUseNow} en utilisation, ${t.unavailableNow} indisponible(s), pic réservé ${t.reservedPeak}` : `Pic réservé ${t.reservedPeak} sur ${t.capacity}`}>
+            <strong>{t.name.replace(/^Sac de location /, 'Sac ')}</strong>{' '}
+            <span className="num">{free}/{t.capacity}</span> <span className="caption">{board.isToday ? 'libres maintenant' : 'libres au plus bas'}</span>
+          </span>
+        );
+      })}
+      {board.conflicts.length > 0 && (
+        <span className="badge danger" role="status">⚠ {board.conflicts.length} affectation(s) pendant une maintenance — voir Ressources</span>
+      )}
+    </div>
+  );
+}
 
 
 function BlockPanel({ courseId, date, onDone, onClose }: { courseId: string; date: string; onDone: () => void; onClose: () => void }) {
